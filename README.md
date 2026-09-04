@@ -63,12 +63,41 @@ too old for current PyTorch/Demucs).
    folder in this repo.
 3. Open your Twitch stream in a tab, then click the StreamerIsolate icon in
    the toolbar. The tab should go silent, and after roughly a chunk-length
-   delay, isolated speech should start playing. Click the icon again to stop
-   (this restores the tab's normal audio).
+   delay, isolated speech should start playing; the video should also visibly
+   hold back to roughly match (see "Video sync" below). Click the icon again
+   to stop (this restores the tab's normal audio and video).
+
+**Updating after a code change:** the Python backend (`streamerisolate
+serve`) does **not** hot-reload -- stop it (Ctrl+C) and start it again after
+pulling/editing backend code. For the extension, click the reload icon on its
+card in `chrome://extensions` (more reliable than repeating "Load unpacked").
+The version number in the manifest is a quick sanity check that you're
+looking at the build you expect.
 
 **Debugging:** if nothing plays, check `chrome://extensions` → StreamerIsolate
 → "Inspect views: offscreen.html" for console errors (most likely cause:
-`streamerisolate serve` isn't running, or isn't on port 8765).
+`streamerisolate serve` isn't running, or isn't on port 8765). If audio works
+but the video overlay doesn't appear, check the *page's* own console (F12 on
+the Twitch tab, not the offscreen document) for `[StreamerIsolate]` warnings.
+
+### Video sync
+
+The tab's video isn't touched directly -- it keeps playing at full speed,
+because `chrome.tabCapture` taps that same clock for audio, and holding video
+back directly (pausing/slowing it) would also disrupt the audio feeding
+Demucs. Instead, `content.js` is injected into the tab and buffers the
+video's frames (via `requestVideoFrameCallback`, downscaled and captured at a
+modest rate to bound memory), then draws a deliberately-delayed copy of them
+on a transparent canvas positioned exactly over the real video -- so what you
+*see* is delayed to roughly match the processed audio, without the real video
+element ever being disturbed. The delay target is a fixed estimate
+(`TARGET_DELAY_SECONDS` in `extension-chrome/config.js`, currently 4s to
+cover the 3s chunk plus processing/network slack), not measured per-session,
+so it's an approximation, not a sample-accurate sync. The core buffer/redraw
+mechanism was verified against a synthetic timestamped video (measured delay
+landed within ~0.1s of the 3s target in that test); the real-Twitch-page
+integration (frame capture on the actual player, overlay positioning against
+Twitch's DOM) needs your live test.
 
 ### Why two paths
 
@@ -133,16 +162,19 @@ Options for `run`:
 - [x] Chrome extension: true tab-audio interception via `chrome.tabCapture` + offscreen document
 - [x] Reduced default chunk size (6s -> 3s) to shrink the audio/video gap, as
       a cheap partial mitigation
-- [ ] Firefox extension (blocked on Mozilla shipping a tabCapture equivalent)
-- [ ] Audio/video sync, properly: **not** as simple as delaying the tab's
-      video element -- Twitch's video element is the same clock `tabCapture`
-      taps for audio, so pausing/slowing it to hold video back also
-      pauses/distorts the audio our pipeline depends on. The real fix would
-      be a canvas overlay that buffers and redraws delayed video frames while
-      the original video element keeps playing undisturbed underneath (so
-      audio capture stays clean) -- not yet built, deferred in favor of the
-      chunk-size reduction above.
 - [x] Reduce song-vocal bleed-through: PANNs speech-vs-singing classifier
-      gating the vocals stem (built, integration-tested, **not yet validated
-      against real singing/speech audio** -- needs a live test)
+      gating the vocals stem (built, integration-tested; user-tested live and
+      confirmed it attenuates, but still struggles to cleanly separate the
+      streamer's speech from a song's vocals, and the attenuation fluctuates
+      noticeably -- likely because the classifier runs independently per
+      chunk with no smoothing across chunk boundaries or window-to-window;
+      revisit if this keeps being an issue)
+- [x] Audio/video sync via a canvas overlay (`extension-chrome/content.js`):
+      buffers and redraws delayed video frames on top of the real video,
+      which keeps playing undisturbed underneath so audio capture stays
+      clean. The buffer/redraw mechanism itself was verified against a
+      synthetic timestamped video (measured delay within ~0.1s of target);
+      the real-Twitch-page integration needs a live test. Delay target is a
+      fixed estimate, not measured per-session.
+- [ ] Firefox extension (blocked on Mozilla shipping a tabCapture equivalent)
 - [ ] Config for saving preferred devices/settings

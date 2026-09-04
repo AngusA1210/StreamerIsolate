@@ -1,7 +1,10 @@
 // Service worker: owns the toggle-on-click UX and the offscreen document
 // lifecycle. Actual audio capture/processing/playback happens in the
 // offscreen document (offscreen.js), since service workers have no DOM /
-// AudioContext / MediaStream support.
+// AudioContext / MediaStream support. Video-delay sync happens in
+// content.js, injected into the captured tab itself.
+
+importScripts("config.js");
 
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
@@ -27,6 +30,16 @@ async function startCapture(tab) {
   await ensureOffscreenDocument();
   const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
   chrome.runtime.sendMessage({ type: "start-capture", streamId, tabId: tab.id });
+
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+    chrome.tabs.sendMessage(tab.id, { type: "start-sync", targetDelaySeconds: TARGET_DELAY_SECONDS });
+  } catch (err) {
+    // Video sync is a bonus on top of audio isolation -- don't block capture
+    // on it (e.g. the tab may be a chrome:// page or otherwise unscriptable).
+    console.warn("[StreamerIsolate] could not start video sync:", err);
+  }
+
   chrome.action.setBadgeText({ text: "ON", tabId: tab.id });
   chrome.action.setBadgeBackgroundColor({ color: "#2e7d32", tabId: tab.id });
   await setCapturing(tab.id, true);
@@ -34,6 +47,7 @@ async function startCapture(tab) {
 
 async function stopCapture(tabId) {
   chrome.runtime.sendMessage({ type: "stop-capture", tabId });
+  chrome.tabs.sendMessage(tabId, { type: "stop-sync" }).catch(() => {});
   chrome.action.setBadgeText({ text: "", tabId });
   await setCapturing(tabId, false);
 }

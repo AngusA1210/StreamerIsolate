@@ -60,8 +60,8 @@ async function startCapture(streamId) {
         type: "start",
         sampleRate: audioContext.sampleRate,
         channels: 2,
-        chunkSeconds: 3.0,
-        overlapSeconds: 0.75,
+        chunkSeconds: CHUNK_SECONDS,
+        overlapSeconds: OVERLAP_SECONDS,
         gain: 1.0,
       })
     );
