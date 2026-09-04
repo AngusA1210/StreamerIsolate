@@ -32,6 +32,7 @@ import websockets
 from scipy.signal import resample_poly
 
 from .separator import SpeechIsolator
+from .vocal_classifier import VocalClassifier
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -56,6 +57,7 @@ class StreamSession:
         chunk_seconds: float = 3.0,
         overlap_seconds: float = 0.75,
         gain: float = 1.0,
+        vocal_classifier: VocalClassifier | None = None,
     ):
         if overlap_seconds >= chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
@@ -64,6 +66,7 @@ class StreamSession:
         self.browser_rate = browser_rate
         self.channels = channels
         self.gain = gain
+        self.vocal_classifier = vocal_classifier
         self.model_rate = isolator.samplerate
 
         self._up, self._down = _resample_ratio(browser_rate, self.model_rate)
@@ -99,6 +102,9 @@ class StreamSession:
             vocals = self.isolator.isolate_speech(tensor)
             out = vocals.numpy().T * self.gain
 
+            if self.vocal_classifier is not None:
+                out = self.vocal_classifier.apply(out, self.model_rate)
+
             if self._prev_tail is None:
                 emit = out[:hop_samples_model]
             else:
@@ -113,7 +119,9 @@ class StreamSession:
         return outputs
 
 
-async def _handle_connection(websocket, isolator: SpeechIsolator) -> None:
+async def _handle_connection(
+    websocket, isolator: SpeechIsolator, vocal_classifier: VocalClassifier | None
+) -> None:
     session: StreamSession | None = None
     loop = asyncio.get_running_loop()
     peer = websocket.remote_address
@@ -129,9 +137,10 @@ async def _handle_connection(websocket, isolator: SpeechIsolator) -> None:
                             isolator=isolator,
                             browser_rate=int(data["sampleRate"]),
                             channels=int(data.get("channels", 2)),
-                            chunk_seconds=float(data.get("chunkSeconds", 6.0)),
-                            overlap_seconds=float(data.get("overlapSeconds", 1.0)),
+                            chunk_seconds=float(data.get("chunkSeconds", 3.0)),
+                            overlap_seconds=float(data.get("overlapSeconds", 0.75)),
                             gain=float(data.get("gain", 1.0)),
+                            vocal_classifier=vocal_classifier,
                         )
                         await websocket.send(json.dumps({"type": "ready"}))
                         print(f"[server] session started: {data}")
@@ -151,13 +160,24 @@ async def _handle_connection(websocket, isolator: SpeechIsolator) -> None:
         print(f"[server] client disconnected: {peer}")
 
 
-async def run_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, model_name: str = "htdemucs") -> None:
+async def run_server(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    model_name: str = "htdemucs",
+    use_vocal_classifier: bool = True,
+) -> None:
     print(f"Loading Demucs model '{model_name}'...")
     isolator = SpeechIsolator(model_name=model_name)
     print(f"Model loaded on device: {isolator.device}")
 
+    vocal_classifier = None
+    if use_vocal_classifier:
+        print("Loading vocal classifier (PANNs Cnn14, to reduce song-vocal bleed-through)...")
+        vocal_classifier = VocalClassifier()
+        print("Vocal classifier loaded.")
+
     async def handler(websocket):
-        await _handle_connection(websocket, isolator)
+        await _handle_connection(websocket, isolator, vocal_classifier)
 
     async with websockets.serve(handler, host, port, max_size=None):
         print(f"StreamerIsolate bridge server listening on ws://{host}:{port}")
@@ -169,10 +189,15 @@ def main() -> None:
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--model", default="htdemucs")
+    parser.add_argument(
+        "--no-vocal-classifier",
+        action="store_true",
+        help="Disable the PANNs-based singing/speech classifier (skips loading its ~330MB checkpoint)",
+    )
     args = parser.parse_args()
 
     try:
-        asyncio.run(run_server(args.host, args.port, args.model))
+        asyncio.run(run_server(args.host, args.port, args.model, use_vocal_classifier=not args.no_vocal_classifier))
     except KeyboardInterrupt:
         print("\nStopping...")
 

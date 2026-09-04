@@ -22,11 +22,19 @@ Captured audio is processed in overlapping chunks (default 3s, 0.75s overlap)
 through a pretrained [Demucs](https://github.com/facebookresearch/demucs)
 model, which separates the mix into stems (drums/bass/other/vocals). Only the
 `vocals` stem is kept — this is the v1 approximation of "speech, not music,"
-not per-instrument removal, so a song's *sung* vocals can still bleed through
-(Demucs doesn't distinguish singing from talking). The isolated speech is
-crossfaded across chunk boundaries. This introduces a delay of roughly one
-chunk length between the live stream and the processed speech, and currently
-the video isn't delayed to match — both are known v1 limitations, not bugs.
+not per-instrument removal, so a song's *sung* vocals could still bleed
+through (Demucs doesn't distinguish singing from talking). To reduce that, a
+second pretrained model ([PANNs](https://github.com/qiuqiangkong/panns_inference),
+trained on AudioSet) runs over the isolated vocals and attenuates stretches it
+classifies as singing rather than speech — a soft, confidence-weighted gate,
+not a hard cut, and not a perfect fix (expressive speech can still read as
+singing-ish, and quiet singing can still read as speech-ish). Disable it with
+`--no-vocal-classifier` (`run`) or when starting `serve`, if you'd rather
+compare with it off, or want to skip its ~330MB checkpoint download. The
+isolated speech is then crossfaded across chunk boundaries. This introduces a
+delay of roughly one chunk length between the live stream and the processed
+speech, and currently the video isn't delayed to match — both are known v1
+limitations, not bugs (see "Status / roadmap").
 
 ## Install (backend, needed for both paths)
 
@@ -134,5 +142,7 @@ Options for `run`:
       the original video element keeps playing undisturbed underneath (so
       audio capture stays clean) -- not yet built, deferred in favor of the
       chunk-size reduction above.
-- [ ] Reduce song-vocal bleed-through (e.g. a speech-vs-singing classifier on the vocals stem)
+- [x] Reduce song-vocal bleed-through: PANNs speech-vs-singing classifier
+      gating the vocals stem (built, integration-tested, **not yet validated
+      against real singing/speech audio** -- needs a live test)
 - [ ] Config for saving preferred devices/settings

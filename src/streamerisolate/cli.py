@@ -7,6 +7,7 @@ from . import audio_io
 from .pipeline import Pipeline
 from .separator import SpeechIsolator
 from .server import DEFAULT_HOST, DEFAULT_PORT, run_server
+from .vocal_classifier import VocalClassifier
 
 
 def main() -> None:
@@ -31,6 +32,11 @@ def main() -> None:
     run.add_argument("--chunk-seconds", type=float, default=3.0)
     run.add_argument("--overlap-seconds", type=float, default=0.75)
     run.add_argument("--gain", type=float, default=1.0, help="Output gain applied to isolated speech")
+    run.add_argument(
+        "--no-vocal-classifier",
+        action="store_true",
+        help="Disable the PANNs-based singing/speech classifier (skips loading its ~330MB checkpoint)",
+    )
 
     serve = sub.add_parser(
         "serve", help="Run the local WebSocket bridge for the Chrome extension (true tab-audio interception)"
@@ -38,6 +44,11 @@ def main() -> None:
     serve.add_argument("--host", default=DEFAULT_HOST)
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
     serve.add_argument("--model", default="htdemucs", help="Demucs model name (default: htdemucs)")
+    serve.add_argument(
+        "--no-vocal-classifier",
+        action="store_true",
+        help="Disable the PANNs-based singing/speech classifier (skips loading its ~330MB checkpoint)",
+    )
 
     args = parser.parse_args()
 
@@ -49,7 +60,9 @@ def main() -> None:
         import asyncio
 
         try:
-            asyncio.run(run_server(args.host, args.port, args.model))
+            asyncio.run(
+                run_server(args.host, args.port, args.model, use_vocal_classifier=not args.no_vocal_classifier)
+            )
         except KeyboardInterrupt:
             print("\nStopping...")
         return
@@ -61,6 +74,12 @@ def main() -> None:
         isolator = SpeechIsolator(model_name=args.model)
         print(f"Model loaded on device: {isolator.device}")
 
+        vocal_classifier = None
+        if not args.no_vocal_classifier:
+            print("Loading vocal classifier (PANNs Cnn14, to reduce song-vocal bleed-through)...")
+            vocal_classifier = VocalClassifier()
+            print("Vocal classifier loaded.")
+
         if args.capture_app:
             pipeline = Pipeline(
                 output_device=output_device,
@@ -69,6 +88,7 @@ def main() -> None:
                 chunk_seconds=args.chunk_seconds,
                 overlap_seconds=args.overlap_seconds,
                 gain=args.gain,
+                vocal_classifier=vocal_classifier,
             )
         else:
             input_device = audio_io.resolve_device(args.input)
@@ -79,6 +99,7 @@ def main() -> None:
                 chunk_seconds=args.chunk_seconds,
                 overlap_seconds=args.overlap_seconds,
                 gain=args.gain,
+                vocal_classifier=vocal_classifier,
             )
 
         print(

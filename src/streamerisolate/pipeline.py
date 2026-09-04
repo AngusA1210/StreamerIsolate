@@ -18,6 +18,7 @@ import torch
 
 from .app_capture import AppAudioCapture
 from .separator import SpeechIsolator
+from .vocal_classifier import VocalClassifier
 
 
 class Pipeline:
@@ -31,6 +32,7 @@ class Pipeline:
         overlap_seconds: float = 0.75,
         gain: float = 1.0,
         block_size: int = 1024,
+        vocal_classifier: VocalClassifier | None = None,
     ):
         if overlap_seconds >= chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
@@ -41,6 +43,7 @@ class Pipeline:
         self.capture_app = capture_app
         self.output_device = output_device
         self.isolator = isolator
+        self.vocal_classifier = vocal_classifier
         self.samplerate = isolator.samplerate
         self.channels = isolator.audio_channels
         self.gain = gain
@@ -111,6 +114,9 @@ class Pipeline:
             tensor = torch.from_numpy(chunk.T.astype(np.float32))  # (channels, samples)
             vocals = self.isolator.isolate_speech(tensor)  # (channels, samples)
             out = vocals.numpy().T * self.gain  # (samples, channels)
+
+            if self.vocal_classifier is not None:
+                out = self.vocal_classifier.apply(out, self.samplerate)
 
             if self._prev_tail is None:
                 emit = out[: self.hop_samples]
