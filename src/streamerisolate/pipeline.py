@@ -27,8 +27,8 @@ class Pipeline:
         isolator: SpeechIsolator,
         input_device: int | None = None,
         capture_app: str | None = None,
-        chunk_seconds: float = 6.0,
-        overlap_seconds: float = 1.0,
+        chunk_seconds: float = 3.0,
+        overlap_seconds: float = 0.75,
         gain: float = 1.0,
         block_size: int = 1024,
     ):

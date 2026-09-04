@@ -18,7 +18,7 @@ Both use the same Demucs backend under the hood.
 
 ## How separation works
 
-Captured audio is processed in overlapping chunks (default 6s, 1s overlap)
+Captured audio is processed in overlapping chunks (default 3s, 0.75s overlap)
 through a pretrained [Demucs](https://github.com/facebookresearch/demucs)
 model, which separates the mix into stems (drums/bass/other/vocals). Only the
 `vocals` stem is kept — this is the v1 approximation of "speech, not music,"
@@ -110,7 +110,7 @@ Options for `run`:
 
 - `--model` — Demucs model name (default `htdemucs`)
 - `--chunk-seconds` / `--overlap-seconds` — processing window size and
-  crossfade overlap (default 6s / 1s)
+  crossfade overlap (default 3s / 0.75s)
 - `--gain` — output gain applied to the isolated speech
 - `--capture-app` — macOS-only alternative to `--input` using ScreenCaptureKit
   (see `native/capture-app-audio/`). Kept for reference, but as explained
@@ -123,7 +123,16 @@ Options for `run`:
 - [x] Standalone Python pipeline: virtual-device capture -> Demucs separate -> playback
 - [x] Local WebSocket bridge server (`streamerisolate serve`) for the extension
 - [x] Chrome extension: true tab-audio interception via `chrome.tabCapture` + offscreen document
+- [x] Reduced default chunk size (6s -> 3s) to shrink the audio/video gap, as
+      a cheap partial mitigation
 - [ ] Firefox extension (blocked on Mozilla shipping a tabCapture equivalent)
-- [ ] Audio/video sync (delay the tab's video element to match the processing delay)
+- [ ] Audio/video sync, properly: **not** as simple as delaying the tab's
+      video element -- Twitch's video element is the same clock `tabCapture`
+      taps for audio, so pausing/slowing it to hold video back also
+      pauses/distorts the audio our pipeline depends on. The real fix would
+      be a canvas overlay that buffers and redraws delayed video frames while
+      the original video element keeps playing undisturbed underneath (so
+      audio capture stays clean) -- not yet built, deferred in favor of the
+      chunk-size reduction above.
 - [ ] Reduce song-vocal bleed-through (e.g. a speech-vs-singing classifier on the vocals stem)
 - [ ] Config for saving preferred devices/settings

@@ -53,8 +53,8 @@ class StreamSession:
         isolator: SpeechIsolator,
         browser_rate: int,
         channels: int,
-        chunk_seconds: float = 6.0,
-        overlap_seconds: float = 1.0,
+        chunk_seconds: float = 3.0,
+        overlap_seconds: float = 0.75,
         gain: float = 1.0,
     ):
         if overlap_seconds >= chunk_seconds:

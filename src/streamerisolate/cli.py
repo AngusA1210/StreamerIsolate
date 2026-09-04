@@ -28,8 +28,8 @@ def main() -> None:
     )
     run.add_argument("--output", required=True, help="Output device index or name substring")
     run.add_argument("--model", default="htdemucs", help="Demucs model name (default: htdemucs)")
-    run.add_argument("--chunk-seconds", type=float, default=6.0)
-    run.add_argument("--overlap-seconds", type=float, default=1.0)
+    run.add_argument("--chunk-seconds", type=float, default=3.0)
+    run.add_argument("--overlap-seconds", type=float, default=0.75)
     run.add_argument("--gain", type=float, default=1.0, help="Output gain applied to isolated speech")
 
     serve = sub.add_parser(
