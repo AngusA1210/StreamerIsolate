@@ -32,7 +32,7 @@ import websockets
 from scipy.signal import resample_poly
 
 from .separator import SpeechIsolator
-from .vocal_classifier import VocalClassifier
+from .vocal_classifier import ClassifierState, VocalClassifier
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -71,6 +71,7 @@ class StreamSession:
         # 0..1, adjustable live from the extension's slider. Kept per-session
         # rather than on the classifier, which is shared across connections.
         self.vocal_strength = vocal_strength
+        self.classifier_state = ClassifierState()
         self.model_rate = isolator.samplerate
 
         self._up, self._down = _resample_ratio(browser_rate, self.model_rate)
@@ -106,11 +107,13 @@ class StreamSession:
             vocals = self.isolator.isolate_speech(tensor)
             out = vocals.numpy().T * self.gain
 
-            min_gain = VocalClassifier.min_gain_for_strength(self.vocal_strength)
-            if self.vocal_classifier is not None and min_gain < 1.0:
-                # min_gain == 1.0 means the slider is at zero: nothing would be
-                # attenuated anyway, so skip the classifier entirely.
-                out = self.vocal_classifier.apply(out, self.model_rate, min_gain=min_gain)
+            if self.vocal_classifier is not None and self.vocal_strength > 0.0:
+                out = self.vocal_classifier.apply(
+                    out,
+                    self.model_rate,
+                    strength=self.vocal_strength,
+                    state=self.classifier_state,
+                )
 
             if self._prev_tail is None:
                 emit = out[:hop_samples_model]

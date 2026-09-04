@@ -26,9 +26,20 @@ not per-instrument removal, so a song's *sung* vocals could still bleed
 through (Demucs doesn't distinguish singing from talking). To reduce that, a
 second pretrained model ([PANNs](https://github.com/qiuqiangkong/panns_inference),
 trained on AudioSet) runs over the isolated vocals and attenuates stretches it
-classifies as singing rather than speech — a soft, confidence-weighted gate,
-not a hard cut, and not a perfect fix (expressive speech can still read as
-singing-ish, and quiet singing can still read as speech-ish). Disable it with
+classifies as singing rather than speech — a soft, smoothed gate, not a hard
+cut.
+
+It scores by the *relative dominance* of singing over speech rather than the
+raw difference between them, because AudioSet's "Speech" label fires on
+singing too — an earlier rule of "attenuate when singing beats speech by a
+fixed margin" almost never triggered strongly, which is why singing bled
+through even at maximum strength. The strength setting scales both how
+readily it triggers and how fast it ramps to a full cut, and the score is
+smoothed across chunk boundaries so the attenuation doesn't wobble.
+
+It's still a mitigation, not a fix: when the streamer talks *over* a song,
+both land in the same window and no per-window gate can separate them.
+Disable it with
 `--no-vocal-classifier` (`run`) or when starting `serve`, if you'd rather
 compare with it off, or want to skip its ~330MB checkpoint download. The
 isolated speech is then crossfaded across chunk boundaries. This introduces a
@@ -107,10 +118,14 @@ while the same span of H.264 is single-digit megabytes. (An earlier version
 buffered raw bitmaps and had to downscale to 640px at 12fps to fit in memory,
 which was visibly soft and choppy.)
 
-The delay target is a fixed estimate (`TARGET_DELAY_SECONDS` in
-`extension-chrome/config.js`, currently 4s to cover the 3s chunk plus
-processing/network slack), not measured per-session, so it's an
-approximation rather than a sample-accurate sync.
+The delay starts from an estimate (`TARGET_DELAY_SECONDS` in
+`extension-chrome/config.js`) but doesn't stay there: once audio is flowing,
+the offscreen document measures the real end-to-end latency and tells the
+overlay to match it. Because the processed stream comes back in the same
+order it went out, output frame N corresponds to input frame N, so comparing
+when that frame was captured against when its processed counterpart is
+scheduled to play gives the true latency — which then adapts to machine speed
+and settings instead of drifting from a hardcoded guess.
 
 Known behavior: switching away from the tab freezes the browser's animation
 callbacks, so capture and playback both stall. On returning, the buffer is
@@ -195,9 +210,17 @@ Options for `run`:
 - [x] Full-quality video overlay: frames buffered as encoded WebCodecs chunks
       instead of raw bitmaps, so native resolution and frame rate are kept
       (the raw-bitmap version had to downscale to 640px/12fps to fit memory)
-- [x] Live vocal-attenuation slider in the extension popup
-- [ ] Smooth out the classifier's fluctuating attenuation — it currently
-      classifies each chunk independently, with no continuity carried across
-      chunk boundaries, which is the likely cause of the wobble
-- [ ] Firefox extension (blocked on Mozilla shipping a tabCapture equivalent)
+- [x] Live vocal-attenuation slider in the extension popup, with a buffering
+      indicator while the first chunk fills
+- [x] Stronger, steadier singing detection: dominance-based scoring, strength
+      scaling the trigger (not just the floor), smoothing carried across
+      chunks, and a fix for FIR ringing that was putting a ~24% level dip at
+      every chunk boundary
+- [x] Self-correcting A/V sync: the real audio latency is measured live and
+      the video overlay matches it, instead of a fixed estimate
+- [ ] Standalone app with a GUI, so the non-extension path doesn't need a
+      terminal
+- [ ] Firefox support. A Firefox *extension* can't do audio interception
+      (no `tabCapture` equivalent), but it could still do the video-delay
+      overlay while the standalone app handles audio via a virtual device
 - [ ] Config for saving preferred devices/settings

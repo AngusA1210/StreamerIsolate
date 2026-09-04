@@ -316,6 +316,10 @@
       start(message.targetDelaySeconds);
     } else if (message.type === "stop-sync") {
       stop();
+    } else if (message.type === "set-delay") {
+      // The offscreen document measured the real audio latency; match it
+      // rather than sticking with the fixed estimate we started from.
+      if (message.targetDelaySeconds > 0) targetDelayMs = message.targetDelaySeconds * 1000;
     }
   });
 })();

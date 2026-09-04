@@ -8,7 +8,14 @@ importScripts("config.js");
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "get-state") {
-    getCapturing(message.tabId).then((capturing) => sendResponse({ capturing }));
+    chrome.storage.session
+      .get([`capturing_${message.tabId}`, `phase_${message.tabId}`])
+      .then((r) =>
+        sendResponse({
+          capturing: !!r[`capturing_${message.tabId}`],
+          phase: r[`phase_${message.tabId}`] || "off",
+        })
+      );
     return true; // async response
   }
   if (message.type === "start-capture-request") {
@@ -22,6 +29,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
+  }
+  if (message.type === "capture-phase") {
+    // Offscreen tells us when the first processed audio arrives, i.e. when
+    // the initial buffering wait is over.
+    setPhase(message.tabId, message.phase);
+    chrome.action.setBadgeText({ text: message.phase === "running" ? "ON" : "···", tabId: message.tabId });
+    return false;
+  }
+  if (message.type === "measured-delay") {
+    // Offscreen measured the real audio latency; hand it to the video
+    // overlay so it delays by the same amount instead of a fixed guess.
+    if (message.tabId) {
+      chrome.tabs
+        .sendMessage(message.tabId, {
+          type: "set-delay",
+          targetDelaySeconds: message.targetDelaySeconds,
+        })
+        .catch(() => {});
+    }
+    return false;
   }
   return false;
 });
@@ -49,9 +76,10 @@ async function startCapture(tabId, streamId, vocalStrength) {
     console.warn("[StreamerIsolate] could not start video sync:", err);
   }
 
-  chrome.action.setBadgeText({ text: "ON", tabId });
+  chrome.action.setBadgeText({ text: "···", tabId });
   chrome.action.setBadgeBackgroundColor({ color: "#2e7d32", tabId });
   await setCapturing(tabId, true);
+  await setPhase(tabId, "buffering");
 }
 
 async function stopCapture(tabId) {
@@ -59,6 +87,7 @@ async function stopCapture(tabId) {
   chrome.tabs.sendMessage(tabId, { type: "stop-sync" }).catch(() => {});
   chrome.action.setBadgeText({ text: "", tabId });
   await setCapturing(tabId, false);
+  await setPhase(tabId, "off");
 }
 
 async function getCapturing(tabId) {
@@ -70,6 +99,13 @@ async function getCapturing(tabId) {
 async function setCapturing(tabId, value) {
   const key = `capturing_${tabId}`;
   await chrome.storage.session.set({ [key]: value });
+}
+
+async function setPhase(tabId, phase) {
+  // storage.session (rather than a variable) so the popup can read it fresh
+  // and subscribe to changes -- the service worker may be torn down between
+  // popup opens.
+  await chrome.storage.session.set({ [`phase_${tabId}`]: phase });
 }
 
 // If the captured tab is closed, make sure we don't leave capture running.

@@ -11,6 +11,7 @@ const strengthValueEl = document.getElementById("strengthValue");
 
 let activeTab = null;
 let capturing = false;
+let phase = "off";
 
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -24,13 +25,30 @@ async function init() {
   if (tab && tab.id) {
     const state = await chrome.runtime.sendMessage({ type: "get-state", tabId: tab.id });
     capturing = !!(state && state.capturing);
+    phase = (state && state.phase) || "off";
+
+    // Buffering can finish while the popup is open, so track it live.
+    chrome.storage.session.onChanged.addListener((changes) => {
+      const change = changes[`phase_${tab.id}`];
+      if (change) {
+        phase = change.newValue || "off";
+        render();
+      }
+    });
   }
   render();
 }
 
 function render() {
-  statusEl.textContent = capturing ? "Running on this tab" : "Off";
-  statusEl.classList.toggle("on", capturing);
+  if (!capturing) {
+    statusEl.textContent = "Off";
+  } else if (phase === "running") {
+    statusEl.textContent = "Running on this tab";
+  } else {
+    statusEl.textContent = "Buffering… (takes a few seconds)";
+  }
+  statusEl.classList.toggle("on", capturing && phase === "running");
+  statusEl.classList.toggle("buffering", capturing && phase !== "running");
   toggleEl.textContent = capturing ? "Stop" : "Start on this tab";
 }
 
@@ -50,6 +68,7 @@ toggleEl.addEventListener("click", async () => {
         vocalStrength: Number(strengthEl.value) / 100,
       });
       capturing = true;
+      phase = "buffering";
     }
     render();
   } catch (err) {

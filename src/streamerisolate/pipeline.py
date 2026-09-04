@@ -18,7 +18,7 @@ import torch
 
 from .app_capture import AppAudioCapture
 from .separator import SpeechIsolator
-from .vocal_classifier import VocalClassifier
+from .vocal_classifier import ClassifierState, VocalClassifier
 
 
 class Pipeline:
@@ -46,6 +46,7 @@ class Pipeline:
         self.isolator = isolator
         self.vocal_classifier = vocal_classifier
         self.vocal_strength = vocal_strength
+        self.classifier_state = ClassifierState()
         self.samplerate = isolator.samplerate
         self.channels = isolator.audio_channels
         self.gain = gain
@@ -117,9 +118,13 @@ class Pipeline:
             vocals = self.isolator.isolate_speech(tensor)  # (channels, samples)
             out = vocals.numpy().T * self.gain  # (samples, channels)
 
-            min_gain = VocalClassifier.min_gain_for_strength(self.vocal_strength)
-            if self.vocal_classifier is not None and min_gain < 1.0:
-                out = self.vocal_classifier.apply(out, self.samplerate, min_gain=min_gain)
+            if self.vocal_classifier is not None and self.vocal_strength > 0.0:
+                out = self.vocal_classifier.apply(
+                    out,
+                    self.samplerate,
+                    strength=self.vocal_strength,
+                    state=self.classifier_state,
+                )
 
             if self._prev_tail is None:
                 emit = out[: self.hop_samples]
