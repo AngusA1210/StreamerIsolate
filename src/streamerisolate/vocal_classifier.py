@@ -65,13 +65,18 @@ class VocalClassifier:
         self._speech_idx = [cfg.lb_to_ix[label] for label in SPEECH_LABELS]
         self._singing_idx = [cfg.lb_to_ix[label] for label in SINGING_LABELS]
 
-    def gain_envelope(self, audio: np.ndarray, samplerate: int) -> np.ndarray:
+    def gain_envelope(self, audio: np.ndarray, samplerate: int, min_gain: float | None = None) -> np.ndarray:
         """audio: (samples, channels) float32 at `samplerate`.
         Returns a (samples,) float32 gain curve in [min_gain, 1.0] -- multiply
         it onto `audio` (broadcasting over channels) to attenuate singing-
         classified stretches while leaving speech-classified stretches at
         full gain.
+
+        `min_gain` overrides the instance default for this call, so a live
+        strength control can vary it per chunk without mutating shared state.
         """
+        if min_gain is None:
+            min_gain = self.min_gain
         n = len(audio)
         mono = audio.mean(axis=1).astype(np.float32)
 
@@ -97,7 +102,7 @@ class VocalClassifier:
         # false cut (losing real speech) is worse for this use case than a
         # false pass (some song vocal bleeding through).
         margin = singing_score - speech_score
-        window_gain = np.clip(1.0 - (margin / self.margin_for_full_cut), self.min_gain, 1.0).astype(np.float32)
+        window_gain = np.clip(1.0 - (margin / self.margin_for_full_cut), min_gain, 1.0).astype(np.float32)
 
         window_centers = np.array([s + window / 2 for s in starts], dtype=np.float64)
         sample_positions = np.arange(len(mono_32k), dtype=np.float64)
@@ -107,13 +112,22 @@ class VocalClassifier:
 
         up_back, down_back = _resample_ratio(PANNS_SAMPLE_RATE, samplerate)
         gain_target_rate = resample_poly(gain_32k, up_back, down_back).astype(np.float32)
-        gain_target_rate = np.clip(gain_target_rate, self.min_gain, 1.0)
+        gain_target_rate = np.clip(gain_target_rate, min_gain, 1.0)
 
         if len(gain_target_rate) < n:
             gain_target_rate = np.pad(gain_target_rate, (0, n - len(gain_target_rate)), mode="edge")
         return gain_target_rate[:n]
 
-    def apply(self, audio: np.ndarray, samplerate: int) -> np.ndarray:
+    def apply(self, audio: np.ndarray, samplerate: int, min_gain: float | None = None) -> np.ndarray:
         """Convenience: returns `audio` with the gain envelope applied."""
-        gain = self.gain_envelope(audio, samplerate)
+        gain = self.gain_envelope(audio, samplerate, min_gain=min_gain)
         return audio * gain[:, None]
+
+    @staticmethod
+    def min_gain_for_strength(strength: float) -> float:
+        """Map a 0..1 UI 'strength' onto the attenuation floor.
+
+        strength 0 -> min_gain 1.0 (nothing attenuated, classifier is a no-op)
+        strength 1 -> min_gain 0.0 (singing cut as hard as the model allows)
+        """
+        return float(np.clip(1.0 - strength, 0.0, 1.0))

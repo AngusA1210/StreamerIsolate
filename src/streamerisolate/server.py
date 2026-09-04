@@ -58,6 +58,7 @@ class StreamSession:
         overlap_seconds: float = 0.75,
         gain: float = 1.0,
         vocal_classifier: VocalClassifier | None = None,
+        vocal_strength: float = 0.85,
     ):
         if overlap_seconds >= chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
@@ -67,6 +68,9 @@ class StreamSession:
         self.channels = channels
         self.gain = gain
         self.vocal_classifier = vocal_classifier
+        # 0..1, adjustable live from the extension's slider. Kept per-session
+        # rather than on the classifier, which is shared across connections.
+        self.vocal_strength = vocal_strength
         self.model_rate = isolator.samplerate
 
         self._up, self._down = _resample_ratio(browser_rate, self.model_rate)
@@ -102,8 +106,11 @@ class StreamSession:
             vocals = self.isolator.isolate_speech(tensor)
             out = vocals.numpy().T * self.gain
 
-            if self.vocal_classifier is not None:
-                out = self.vocal_classifier.apply(out, self.model_rate)
+            min_gain = VocalClassifier.min_gain_for_strength(self.vocal_strength)
+            if self.vocal_classifier is not None and min_gain < 1.0:
+                # min_gain == 1.0 means the slider is at zero: nothing would be
+                # attenuated anyway, so skip the classifier entirely.
+                out = self.vocal_classifier.apply(out, self.model_rate, min_gain=min_gain)
 
             if self._prev_tail is None:
                 emit = out[:hop_samples_model]
@@ -141,11 +148,17 @@ async def _handle_connection(
                             overlap_seconds=float(data.get("overlapSeconds", 0.75)),
                             gain=float(data.get("gain", 1.0)),
                             vocal_classifier=vocal_classifier,
+                            vocal_strength=float(data.get("vocalStrength", 0.85)),
                         )
                         await websocket.send(json.dumps({"type": "ready"}))
                         print(f"[server] session started: {data}")
                     except Exception as e:  # noqa: BLE001 - report back to client
                         await websocket.send(json.dumps({"type": "error", "message": str(e)}))
+                elif data.get("type") == "settings":
+                    # Live adjustment from the extension's strength slider.
+                    if session is not None and "vocalStrength" in data:
+                        session.vocal_strength = float(data["vocalStrength"])
+                        print(f"[server] vocal strength -> {session.vocal_strength:.2f}")
                 elif data.get("type") == "stop":
                     session = None
             else:

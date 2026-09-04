@@ -15,12 +15,19 @@ let workletNode = null;
 let gainNode = null;
 let socket = null;
 let playCursor = 0;
+let vocalStrength = 0.85;
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "start-capture") {
+    if (typeof message.vocalStrength === "number") vocalStrength = message.vocalStrength;
     startCapture(message.streamId).catch((err) => console.error("[StreamerIsolate] start failed:", err));
   } else if (message.type === "stop-capture") {
     stopCapture();
+  } else if (message.type === "set-strength") {
+    vocalStrength = message.vocalStrength;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "settings", vocalStrength }));
+    }
   }
 });
 
@@ -63,6 +70,7 @@ async function startCapture(streamId) {
         chunkSeconds: CHUNK_SECONDS,
         overlapSeconds: OVERLAP_SECONDS,
         gain: 1.0,
+        vocalStrength,
       })
     );
   });

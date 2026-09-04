@@ -33,6 +33,7 @@ class Pipeline:
         gain: float = 1.0,
         block_size: int = 1024,
         vocal_classifier: VocalClassifier | None = None,
+        vocal_strength: float = 0.85,
     ):
         if overlap_seconds >= chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
@@ -44,6 +45,7 @@ class Pipeline:
         self.output_device = output_device
         self.isolator = isolator
         self.vocal_classifier = vocal_classifier
+        self.vocal_strength = vocal_strength
         self.samplerate = isolator.samplerate
         self.channels = isolator.audio_channels
         self.gain = gain
@@ -115,8 +117,9 @@ class Pipeline:
             vocals = self.isolator.isolate_speech(tensor)  # (channels, samples)
             out = vocals.numpy().T * self.gain  # (samples, channels)
 
-            if self.vocal_classifier is not None:
-                out = self.vocal_classifier.apply(out, self.samplerate)
+            min_gain = VocalClassifier.min_gain_for_strength(self.vocal_strength)
+            if self.vocal_classifier is not None and min_gain < 1.0:
+                out = self.vocal_classifier.apply(out, self.samplerate, min_gain=min_gain)
 
             if self._prev_tail is None:
                 emit = out[: self.hop_samples]

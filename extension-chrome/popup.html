@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>StreamerIsolate</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1a1a1a;
+        --muted: #666;
+        --bg: #fff;
+        --border: #d8d8d8;
+        --accent: #2e7d32;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #ececec;
+          --muted: #9a9a9a;
+          --bg: #1e1e1e;
+          --border: #3a3a3a;
+          --accent: #4caf50;
+        }
+      }
+      body {
+        width: 260px;
+        margin: 0;
+        padding: 14px;
+        font: 13px/1.4 system-ui, -apple-system, sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 2px;
+      }
+      .status {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 12px;
+      }
+      .status.on {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      button {
+        width: 100%;
+        padding: 8px;
+        font: inherit;
+        font-weight: 600;
+        color: var(--fg);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      .field {
+        margin-top: 16px;
+      }
+      .field-label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+      .field-label span:last-child {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+      }
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+      .hint {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>StreamerIsolate</h1>
+    <div class="status" id="status">Off</div>
+
+    <button id="toggle">Start on this tab</button>
+
+    <div class="field">
+      <div class="field-label">
+        <span>Vocal attenuation</span>
+        <span id="strengthValue">85%</span>
+      </div>
+      <input type="range" id="strength" min="0" max="100" step="1" value="85" />
+      <div class="hint">
+        How hard detected singing is cut. 0% leaves the isolated vocals
+        untouched; 100% cuts singing as hard as the classifier allows. Takes
+        effect live.
+      </div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

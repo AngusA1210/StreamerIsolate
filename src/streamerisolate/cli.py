@@ -37,6 +37,14 @@ def main() -> None:
         action="store_true",
         help="Disable the PANNs-based singing/speech classifier (skips loading its ~330MB checkpoint)",
     )
+    run.add_argument(
+        "--vocal-strength",
+        type=float,
+        default=0.85,
+        help="How hard to attenuate detected singing, 0..1 (0 = off, 1 = cut as hard as possible). "
+        "The Chrome extension exposes this as a live slider; this is the equivalent for the "
+        "standalone pipeline (default: 0.85)",
+    )
 
     serve = sub.add_parser(
         "serve", help="Run the local WebSocket bridge for the Chrome extension (true tab-audio interception)"
@@ -89,6 +97,7 @@ def main() -> None:
                 overlap_seconds=args.overlap_seconds,
                 gain=args.gain,
                 vocal_classifier=vocal_classifier,
+                vocal_strength=args.vocal_strength,
             )
         else:
             input_device = audio_io.resolve_device(args.input)
@@ -100,6 +109,7 @@ def main() -> None:
                 overlap_seconds=args.overlap_seconds,
                 gain=args.gain,
                 vocal_classifier=vocal_classifier,
+                vocal_strength=args.vocal_strength,
             )
 
         print(
