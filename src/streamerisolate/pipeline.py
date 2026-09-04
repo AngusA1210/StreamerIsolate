@@ -62,6 +62,12 @@ class Pipeline:
         self._playback_tail = np.zeros((0, self.channels), dtype=np.float32)
         self._prev_tail: np.ndarray | None = None
 
+        # Progress/health, for callers that want to show status (the GUI polls
+        # these): chunks_emitted stays 0 until the first chunk is buffered and
+        # processed, i.e. while the user is still waiting for audio.
+        self.chunks_emitted = 0
+        self.error: str | None = None
+
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._instream: sd.InputStream | None = None
@@ -104,38 +110,50 @@ class Pipeline:
 
     def _process_loop(self):
         while not self._stop.is_set():
-            with self._input_lock:
-                available = len(self._input_buffer)
-            if available < self.chunk_samples:
-                time.sleep(0.05)
-                continue
+            try:
+                self._process_once()
+            except Exception as e:  # noqa: BLE001
+                # Without this the worker thread would die silently and the
+                # pipeline would just go quiet with no explanation. Record it
+                # so a caller (e.g. the GUI) can surface it.
+                self.error = f"{type(e).__name__}: {e}"
+                print(f"[pipeline] processing stopped: {self.error}")
+                return
 
-            with self._input_lock:
-                chunk = self._input_buffer[: self.chunk_samples].copy()
-                self._input_buffer = self._input_buffer[self.hop_samples :]
+    def _process_once(self):
+        with self._input_lock:
+            available = len(self._input_buffer)
+        if available < self.chunk_samples:
+            time.sleep(0.05)
+            return
 
-            tensor = torch.from_numpy(chunk.T.astype(np.float32))  # (channels, samples)
-            vocals = self.isolator.isolate_speech(tensor)  # (channels, samples)
-            out = vocals.numpy().T * self.gain  # (samples, channels)
+        with self._input_lock:
+            chunk = self._input_buffer[: self.chunk_samples].copy()
+            self._input_buffer = self._input_buffer[self.hop_samples :]
 
-            if self.vocal_classifier is not None and self.vocal_strength > 0.0:
-                out = self.vocal_classifier.apply(
-                    out,
-                    self.samplerate,
-                    strength=self.vocal_strength,
-                    state=self.classifier_state,
-                )
+        tensor = torch.from_numpy(chunk.T.astype(np.float32))  # (channels, samples)
+        vocals = self.isolator.isolate_speech(tensor)  # (channels, samples)
+        out = vocals.numpy().T * self.gain  # (samples, channels)
 
-            if self._prev_tail is None:
-                emit = out[: self.hop_samples]
-            else:
-                fade_in = np.linspace(0.0, 1.0, self.overlap_samples, dtype=np.float32).reshape(-1, 1)
-                fade_out = 1.0 - fade_in
-                crossfaded = out[: self.overlap_samples] * fade_in + self._prev_tail * fade_out
-                emit = np.concatenate([crossfaded, out[self.overlap_samples : self.hop_samples]], axis=0)
+        if self.vocal_classifier is not None and self.vocal_strength > 0.0:
+            out = self.vocal_classifier.apply(
+                out,
+                self.samplerate,
+                strength=self.vocal_strength,
+                state=self.classifier_state,
+            )
 
-            self._prev_tail = out[self.hop_samples : self.hop_samples + self.overlap_samples]
-            self._output_queue.put(emit)
+        if self._prev_tail is None:
+            emit = out[: self.hop_samples]
+        else:
+            fade_in = np.linspace(0.0, 1.0, self.overlap_samples, dtype=np.float32).reshape(-1, 1)
+            fade_out = 1.0 - fade_in
+            crossfaded = out[: self.overlap_samples] * fade_in + self._prev_tail * fade_out
+            emit = np.concatenate([crossfaded, out[self.overlap_samples : self.hop_samples]], axis=0)
+
+        self._prev_tail = out[self.hop_samples : self.hop_samples + self.overlap_samples]
+        self._output_queue.put(emit)
+        self.chunks_emitted += 1
 
     # --- lifecycle ---
 

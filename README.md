@@ -149,6 +149,23 @@ standalone-app path below as the option that still works on Firefox.
 
 ## Path 2: Standalone app + virtual audio device (Firefox, or any app)
 
+The easiest way to use this path is the desktop app — no terminal needed
+beyond launching it:
+
+```bash
+source .venv/bin/activate
+streamerisolate-gui
+```
+
+It has dropdowns for the capture/playback devices, the same live vocal
+attenuation slider as the extension, a Start/Stop button, and a status line
+that tells you when it's still buffering versus actually running. Your device
+and slider choices are remembered between launches, and the "How do I set this
+up?" button explains the virtual-device routing. Models load on the first
+Start only (~15s), on a background thread so the window stays responsive.
+
+The CLI below is still there if you prefer it.
+
 To feed a stream's audio into the app, you need a virtual audio device that
 your browser can output to, which this app can then read as an "input."
 **Install this yourself** (it requires approving a system audio driver in
@@ -218,9 +235,12 @@ Options for `run`:
       every chunk boundary
 - [x] Self-correcting A/V sync: the real audio latency is measured live and
       the video overlay matches it, instead of a fixed estimate
-- [ ] Standalone app with a GUI, so the non-extension path doesn't need a
-      terminal
+- [x] Standalone desktop app (`streamerisolate-gui`, PySide6): device pickers,
+      live attenuation slider, buffering/running status, remembered settings
+- [ ] Package the desktop app as a double-clickable `.app` (note: bundling
+      PyTorch + Demucs + PANNs makes for a multi-GB bundle, so this is its
+      own piece of work)
 - [ ] Firefox support. A Firefox *extension* can't do audio interception
-      (no `tabCapture` equivalent), but it could still do the video-delay
+      (no `tabCapture` equivalent), but it can still do the video-delay
       overlay while the standalone app handles audio via a virtual device
 - [ ] Config for saving preferred devices/settings
