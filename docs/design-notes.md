@@ -115,3 +115,26 @@ browser-agnostic. Keep them in sync.
 lists audio devices. `streamerisolate run --input X --output Y` runs the
 pipeline directly, with `--vocal-strength` (0..1), `--chunk-seconds`,
 `--overlap-seconds`, `--gain`, `--model`, and `--no-vocal-classifier`.
+
+## Starting the backend without a terminal
+
+The backend can't go away — Demucs is a PyTorch model — but the terminal can.
+A native messaging host (`native-host/streamerisolate_host.py`, registered by
+`scripts/install.sh`) lets the extension start it on demand.
+
+It's deliberately narrow: it does **not** carry audio. The extension still
+talks to the backend over the local websocket, which is the path known to
+work; the host only answers "is the backend up, and if not, start it". Audio
+over native messaging would mean pushing ~384KB/s through a stdio channel
+with a 1MB message cap, for no benefit.
+
+The backend needs ~20s to load models, so `ensure-backend` returns as soon as
+it has spawned the process rather than blocking the browser on a long reply.
+The extension's existing reconnect loop covers the wait, and the popup shows
+"Starting backend…" instead of an error during it. The spawned process is
+detached (`start_new_session=True`) so it outlives the host, which the browser
+closes as soon as the message is answered.
+
+Chrome ties native-host permission to the extension ID, which it assigns when
+you load an unpacked extension, so the installer takes that ID as an argument.
+Firefox declares a fixed ID in its manifest, so it needs no such step.

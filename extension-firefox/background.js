@@ -10,15 +10,30 @@
 
 const api = globalThis.browser ?? globalThis.chrome;
 const BACKEND_URL = "ws://127.0.0.1:8765";
+const NATIVE_HOST = "com.angusa1210.streamerisolate";
 
 let socket = null;
 let activeTabId = null;
 let devices = null;
-let state = { connected: false, capturing: false, phase: "off", error: null };
+let state = { connected: false, capturing: false, phase: "off", error: null, starting: false };
 let reportedDelay = null;
 let lastStrength = null;
 
-function connect() {
+// Asks the native host to start the backend if it isn't already up, so the
+// user never has to run it themselves. Never fatal: if the host isn't
+// installed, we still try the websocket in case the backend was started by
+// hand.
+async function ensureBackend() {
+  try {
+    const reply = await api.runtime.sendNativeMessage(NATIVE_HOST, { type: "ensure-backend" });
+    if (reply && reply.status === "starting") state.starting = true;
+    return reply;
+  } catch (e) {
+    return { ok: false, error: `Native host unavailable (${e.message})` };
+  }
+}
+
+function openSocket() {
   return new Promise((resolve, reject) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       resolve();
@@ -81,6 +96,15 @@ function connect() {
       settle(reject, new Error(`Could not reach ${BACKEND_URL}`));
     });
   });
+}
+
+async function connect() {
+  if (socket && socket.readyState === WebSocket.OPEN) return;
+  if (!(await ensureBackend()).ok) {
+    // Host missing or failed -- still worth trying, the backend may be
+    // running from a terminal.
+  }
+  await openSocket();
 }
 
 function handleServerMessage(msg) {

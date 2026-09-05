@@ -7,33 +7,31 @@ fighting.
 Works with **Chrome** (extension only) or **Firefox** (extension + a virtual
 audio device).
 
-## Install
-
-Needs Python 3.10+ — use Homebrew's `python@3.12`, since macOS's built-in
-Python 3.9 is too old for current PyTorch.
+## Install (once)
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+./scripts/install.sh
 ```
 
-First run downloads ~400MB of models.
+That sets up Python, downloads the models (~400MB), and registers a native
+messaging host so the extension can start the backend by itself. Needs
+Homebrew's `python@3.12` — macOS's built-in Python 3.9 is too old for current
+PyTorch (`brew install python@3.12`).
 
-Then start the backend and **leave it running** in that terminal — both
-browser extensions talk to it, and nothing works without it:
-
-```bash
-streamerisolate serve
-```
+After this you never need a terminal: clicking the extension starts
+everything.
 
 ## Chrome
 
 1. Go to `chrome://extensions`, turn on **Developer mode**, click **Load
    unpacked**, pick the `extension-chrome/` folder.
-2. Open your stream, click the StreamerIsolate icon, hit **Start**.
+2. Copy the extension ID it shows, and run `./scripts/install.sh <that-id>`
+   so the extension is allowed to start the backend. (Chrome ties this
+   permission to the ID, which it assigns on load; Firefox needs no such
+   step.)
+3. Open your stream, click the StreamerIsolate icon, hit **Start**.
 
-That's it — no audio setup needed.
+No audio setup needed.
 
 ## Firefox
 
@@ -52,9 +50,10 @@ backend handles audio through a virtual audio device instead.
 
 ## Good to know
 
-- **Starting takes a few seconds.** Models load once (~15s the first time),
-  then it buffers a few seconds before audio comes out. The popup says
-  "Buffering" until it's ready.
+- **Starting takes a few seconds.** The first click starts the backend, which
+  loads models (~20s); after that it stays running and starts are quick.
+  Either way it buffers a few seconds before audio comes out — the popup says
+  so until it's ready.
 - **The slider** controls how hard detected singing is cut, live. Song vocals
   can still bleed through when the streamer talks *over* music — both land in
   the same audio and no setting fully separates them.
@@ -73,10 +72,12 @@ backend handles audio through a virtual audio device instead.
 ## Status
 
 Working: Chrome extension, Firefox extension, video sync, adjustable singing
-attenuation.
+attenuation, and one-click start with no terminal.
 
-Not done: launching the backend without a terminal; Firefox audio
-interception (blocked on Firefox, would remove the virtual-device step).
+Not done: running fully in-browser with no install at all (Demucs would
+have to be ported to ONNX/WebGPU, and existing browser ports are offline-only
+so real-time isn't a given); Firefox audio interception (blocked on Firefox,
+would remove the virtual-device step).
 
 For how it works internally and why it's built this way, see
 [docs/design-notes.md](docs/design-notes.md).

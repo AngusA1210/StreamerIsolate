@@ -3,7 +3,7 @@
   "name": "StreamerIsolate",
   "version": "0.1.0",
   "description": "Removes background music from a livestream, keeping only speech. Drives the StreamerIsolate backend.",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "nativeMessaging"],
   "host_permissions": ["*://*.twitch.tv/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src ws://127.0.0.1:8765 ws://localhost:8765"

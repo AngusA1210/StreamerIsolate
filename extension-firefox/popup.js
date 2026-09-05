@@ -16,6 +16,7 @@ let state = { connected: false, capturing: false, phase: "off", error: null };
 let pollTimer = null;
 let retryTimer = null;
 let storedSettings = null;
+let connectAttempts = 0;
 
 async function init() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
@@ -40,18 +41,26 @@ async function tryConnect() {
   }));
 
   if (!result || !result.ok) {
-    // Name the exact command -- "start the backend" isn't actionable enough --
-    // and keep retrying, since the backend takes ~20s to load its models and
-    // may simply not be up yet.
-    statusEl.innerHTML =
-      "Backend not reachable. In a terminal, run:<br><code>streamerisolate serve</code>" +
-      "<br><span class='detail'></span>";
-    statusEl.className = "status err";
-    const detail = statusEl.querySelector(".detail");
-    if (detail && result && result.error) detail.textContent = result.error;
+    // The native host starts the backend for us, so the usual case here is
+    // simply "still loading models" -- say that rather than crying error.
+    // Only after a while do we suggest the manual fallback.
+    connectAttempts += 1;
+    if (connectAttempts < 15) {
+      statusEl.textContent = "Starting backend… (loads models, ~20s)";
+      statusEl.className = "status";
+    } else {
+      statusEl.innerHTML =
+        "Backend still not reachable. Run <code>./scripts/install.sh</code> once, " +
+        "or start it manually with <code>streamerisolate serve</code>." +
+        "<br><span class='detail'></span>";
+      statusEl.className = "status err";
+      const detail = statusEl.querySelector(".detail");
+      if (detail && result && result.error) detail.textContent = result.error;
+    }
     if (!retryTimer) retryTimer = setInterval(tryConnect, 2000);
     return;
   }
+  connectAttempts = 0;
 
   if (retryTimer) {
     clearInterval(retryTimer);

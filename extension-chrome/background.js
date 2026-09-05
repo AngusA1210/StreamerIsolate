@@ -6,6 +6,19 @@
 
 importScripts("config.js");
 
+const NATIVE_HOST = "com.angusa1210.streamerisolate";
+
+// Starts the backend via the native messaging host if it isn't already up, so
+// using this never requires a terminal. Non-fatal: if the host isn't
+// installed, capture still proceeds in case the backend was started by hand.
+async function ensureBackend() {
+  try {
+    return await chrome.runtime.sendNativeMessage(NATIVE_HOST, { type: "ensure-backend" });
+  } catch (e) {
+    return { ok: false, error: `Native host unavailable (${e.message})` };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "get-state") {
     chrome.storage.session
@@ -64,6 +77,7 @@ async function ensureOffscreenDocument() {
 }
 
 async function startCapture(tabId, streamId, vocalStrength) {
+  await ensureBackend();
   await ensureOffscreenDocument();
   chrome.runtime.sendMessage({ type: "start-capture", streamId, tabId, vocalStrength });
 
