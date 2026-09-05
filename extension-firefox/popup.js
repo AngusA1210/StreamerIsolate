@@ -14,6 +14,8 @@ const strengthValueEl = document.getElementById("strengthValue");
 let activeTab = null;
 let state = { connected: false, capturing: false, phase: "off", error: null };
 let pollTimer = null;
+let retryTimer = null;
+let storedSettings = null;
 
 async function init() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
@@ -24,17 +26,39 @@ async function init() {
   strengthEl.value = Math.round(strength * 100);
   strengthValueEl.textContent = `${Math.round(strength * 100)}%`;
 
-  const connectResult = await api.runtime.sendMessage({ type: "connect" });
-  if (!connectResult || !connectResult.ok) {
-    // Name the exact command -- "start the backend" isn't actionable enough.
+  storedSettings = stored;
+  await tryConnect();
+}
+
+async function tryConnect() {
+  statusEl.textContent = "Connecting to backend…";
+  statusEl.className = "status";
+
+  const result = await api.runtime.sendMessage({ type: "connect" }).catch((e) => ({
+    ok: false,
+    error: `Extension background not responding: ${e.message}`,
+  }));
+
+  if (!result || !result.ok) {
+    // Name the exact command -- "start the backend" isn't actionable enough --
+    // and keep retrying, since the backend takes ~20s to load its models and
+    // may simply not be up yet.
     statusEl.innerHTML =
-      'Backend not running. In a terminal, run:<br><code>streamerisolate serve</code>';
+      "Backend not reachable. In a terminal, run:<br><code>streamerisolate serve</code>" +
+      "<br><span class='detail'></span>";
     statusEl.className = "status err";
+    const detail = statusEl.querySelector(".detail");
+    if (detail && result && result.error) detail.textContent = result.error;
+    if (!retryTimer) retryTimer = setInterval(tryConnect, 2000);
     return;
   }
 
-  await refresh(stored);
-  pollTimer = setInterval(refresh, 700);
+  if (retryTimer) {
+    clearInterval(retryTimer);
+    retryTimer = null;
+  }
+  await refresh(storedSettings);
+  if (!pollTimer) pollTimer = setInterval(refresh, 700);
 }
 
 async function refresh(stored) {
@@ -118,6 +142,7 @@ strengthEl.addEventListener("input", async () => {
 
 window.addEventListener("unload", () => {
   if (pollTimer) clearInterval(pollTimer);
+  if (retryTimer) clearInterval(retryTimer);
 });
 
 init();

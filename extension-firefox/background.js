@@ -23,13 +23,26 @@ function connect() {
       resolve();
       return;
     }
-    socket = new WebSocket(BACKEND_URL);
+    let settled = false;
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+
+    try {
+      socket = new WebSocket(BACKEND_URL);
+    } catch (e) {
+      // e.g. blocked by the extension's content security policy
+      settle(reject, new Error(`Could not open ${BACKEND_URL}: ${e.message}`));
+      return;
+    }
 
     socket.addEventListener("open", () => {
       state.connected = true;
       state.error = null;
       socket.send(JSON.stringify({ type: "control-hello" }));
-      resolve();
+      settle(resolve);
     });
 
     socket.addEventListener("message", (event) => {
@@ -42,17 +55,24 @@ function connect() {
       handleServerMessage(msg);
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       state.connected = false;
       state.capturing = false;
       state.phase = "off";
       stopOverlay();
+      // Closing before it ever opened means the connection was refused or
+      // blocked -- report that rather than leaving the caller hanging.
+      settle(
+        reject,
+        new Error(`Connection to ${BACKEND_URL} closed (code ${event.code}) before it opened`)
+      );
     });
 
     socket.addEventListener("error", () => {
       state.connected = false;
-      state.error = "Can't reach the StreamerIsolate backend. Is it running?";
-      reject(new Error(state.error));
+      // WebSocket error events carry no detail by design; the close handler
+      // above usually follows with a code.
+      settle(reject, new Error(`Could not reach ${BACKEND_URL}`));
     });
   });
 }
