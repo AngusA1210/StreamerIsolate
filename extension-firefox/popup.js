@@ -57,18 +57,21 @@ async function tryConnect() {
     clearInterval(retryTimer);
     retryTimer = null;
   }
-  await refresh(storedSettings);
+  await refresh();
   if (!pollTimer) pollTimer = setInterval(refresh, 700);
 }
 
-async function refresh(stored) {
+async function refresh() {
   const next = await api.runtime.sendMessage({ type: "get-state" });
   if (!next) return;
   state = next;
 
+  // Read the saved selection from module state, not a parameter: the device
+  // list arrives asynchronously, so the call that finally populates the
+  // dropdowns is usually an interval tick, which passes no arguments.
   if (next.devices && inputEl.options.length === 0) {
-    populate(inputEl, next.devices.inputs, stored?.inputDevice ?? next.devices.defaultInput);
-    populate(outputEl, next.devices.outputs, stored?.outputDevice ?? next.devices.defaultOutput);
+    populate(inputEl, next.devices.inputs, storedSettings?.inputDevice ?? next.devices.defaultInput);
+    populate(outputEl, next.devices.outputs, storedSettings?.outputDevice ?? next.devices.defaultOutput);
     toggleEl.disabled = false;
   }
   render();
@@ -132,6 +135,19 @@ toggleEl.addEventListener("click", async () => {
     toggleEl.disabled = false;
   }
 });
+
+// Persist device choices as soon as they're made, not only on Start -- the
+// popup closes without warning and the selection was being lost.
+for (const [select, key] of [
+  [inputEl, "inputDevice"],
+  [outputEl, "outputDevice"],
+]) {
+  select.addEventListener("change", async () => {
+    const value = Number(select.value);
+    storedSettings = { ...(storedSettings || {}), [key]: value };
+    await api.storage.local.set({ [key]: value });
+  });
+}
 
 strengthEl.addEventListener("input", async () => {
   const strength = Number(strengthEl.value) / 100;

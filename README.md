@@ -63,7 +63,12 @@ backend handles audio through a virtual audio device instead.
   doesn't hot-reload. For the extensions, hit reload in the browser.
 - **Nothing playing?** Check that `streamerisolate serve` is running on port
   8765. In Chrome, `chrome://extensions` → StreamerIsolate → "Inspect views:
-  offscreen.html" shows errors.
+  offscreen.html" shows errors. In Firefox, `about:debugging` → Inspect.
+- **Attenuation not doing anything?** Run the backend as
+  `STREAMERISOLATE_DEBUG=1 streamerisolate serve` — it prints one line per
+  chunk showing the strength in effect, what the classifier heard, and the
+  gain it applied, which distinguishes "the slider isn't reaching it" from
+  "it doesn't think there's singing".
 
 ## Status
 

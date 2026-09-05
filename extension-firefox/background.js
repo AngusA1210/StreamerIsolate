@@ -16,6 +16,7 @@ let activeTabId = null;
 let devices = null;
 let state = { connected: false, capturing: false, phase: "off", error: null };
 let reportedDelay = null;
+let lastStrength = null;
 
 function connect() {
   return new Promise((resolve, reject) => {
@@ -42,6 +43,11 @@ function connect() {
       state.connected = true;
       state.error = null;
       socket.send(JSON.stringify({ type: "control-hello" }));
+      // Firefox may unload this event page when idle; on reconnect, re-apply
+      // the slider so a running pipeline can't be left on a stale strength.
+      if (lastStrength !== null) {
+        socket.send(JSON.stringify({ type: "settings", vocalStrength: lastStrength }));
+      }
       settle(resolve);
     });
 
@@ -145,6 +151,7 @@ api.runtime.onMessage.addListener((message) => {
 
   if (message.type === "start") {
     activeTabId = message.tabId;
+    lastStrength = message.vocalStrength;
     return connect()
       .then(() => {
         socket.send(
@@ -171,10 +178,14 @@ api.runtime.onMessage.addListener((message) => {
   }
 
   if (message.type === "set-strength") {
+    lastStrength = message.vocalStrength;
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "settings", vocalStrength: message.vocalStrength }));
+      return Promise.resolve({ ok: true });
     }
-    return Promise.resolve({ ok: true });
+    // Don't fail silently -- a dropped socket is exactly how the slider ends
+    // up looking dead.
+    return Promise.resolve({ ok: false, error: "Not connected to the backend" });
   }
 
   return false;

@@ -24,6 +24,7 @@ them.
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 import torch
@@ -32,9 +33,18 @@ from scipy.signal import resample_poly
 
 PANNS_SAMPLE_RATE = 32000
 
+# Set STREAMERISOLATE_DEBUG=1 to print what the classifier decides per chunk.
+# Invaluable when attenuation "isn't working": it separates "the strength
+# never arrived" from "the model sees no singing in this audio".
+DEBUG = os.environ.get("STREAMERISOLATE_DEBUG", "") not in ("", "0")
+
 # Below this, neither label is saying anything meaningful (near-silence or
 # non-vocal residue), so we hold gain open rather than acting on noise.
 MIN_EVIDENCE = 0.05
+
+# Level normalisation applied to the tagger's input (see gain_envelope).
+TAGGER_TARGET_PEAK = 0.5
+MAX_NORMALISE_GAIN = 20.0
 
 SPEECH_LABELS = [
     "Speech",
@@ -70,6 +80,7 @@ class ClassifierState:
         self.ema: float | None = None
         self.last_singing: float = 0.0
         self.last_speech: float = 0.0
+        self.last_gain_min: float = 1.0
 
 
 class VocalClassifier:
@@ -109,11 +120,26 @@ class VocalClassifier:
         """
         n = len(audio)
         if strength <= 0.0:
+            if DEBUG:
+                print(f"[classifier] strength=0.00 -> bypassed (no attenuation)")
             return np.ones(n, dtype=np.float32)
 
         mono = audio.mean(axis=1).astype(np.float32)
         up, down = _resample_ratio(samplerate, PANNS_SAMPLE_RATE)
         mono_32k = resample_poly(mono, up, down).astype(np.float32)
+
+        # Normalise the level the tagger sees. It was trained on
+        # normal-loudness audio, and its scores fall off sharply on quiet
+        # input -- which made detection depend on how loud the source
+        # happened to be. Chrome's tabCapture delivers full-scale audio, but
+        # the virtual-device route used on Firefox arrives after the system
+        # volume fader, so the same stream could score too low to trigger at
+        # any strength. Only quiet audio is scaled up, capped so near-silence
+        # isn't amplified into noise, and this affects the classifier's input
+        # only -- the returned gain still applies to the original audio.
+        peak = float(np.abs(mono_32k).max())
+        if 1e-3 < peak < TAGGER_TARGET_PEAK:
+            mono_32k = mono_32k * min(TAGGER_TARGET_PEAK / peak, MAX_NORMALISE_GAIN)
 
         window = int(self.window_seconds * PANNS_SAMPLE_RATE)
         hop = int(self.hop_seconds * PANNS_SAMPLE_RATE)
@@ -170,7 +196,26 @@ class VocalClassifier:
             left=window_gain[0],
             right=window_gain[-1],
         )
-        return np.clip(gain, 0.0, 1.0).astype(np.float32)
+        gain = np.clip(gain, 0.0, 1.0).astype(np.float32)
+
+        if state is not None:
+            state.last_gain_min = float(gain.min())
+        if DEBUG:
+            reason = ""
+            if float(np.maximum(singing_score, speech_score).max()) < MIN_EVIDENCE:
+                reason = "  <- no vocal evidence (too quiet / not voice-like)"
+            elif float(smoothed.max()) <= threshold:
+                reason = "  <- speech-dominant, left alone by design"
+            print(
+                f"[classifier] strength={strength:.2f} "
+                f"singing={float(singing_score.mean()):.3f} "
+                f"speech={float(speech_score.mean()):.3f} "
+                f"dominance={float(smoothed.mean()):.3f} "
+                f"threshold={threshold:.2f} peak={peak:.3f} "
+                f"gain={float(gain.min()):.3f}{reason}",
+                flush=True,
+            )
+        return gain
 
     def apply(
         self,
