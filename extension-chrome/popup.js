@@ -89,3 +89,7 @@ strengthEl.addEventListener("input", async () => {
 });
 
 init();
+
+// Show the loaded build, so it's always clear which version is running.
+const versionEl = document.getElementById("si-version");
+if (versionEl) versionEl.textContent = `v${chrome.runtime.getManifest().version}`;

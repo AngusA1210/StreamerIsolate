@@ -29,6 +29,34 @@ PORT = 8765
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BACKEND = PROJECT_ROOT / ".venv" / "bin" / "streamerisolate"
 LOG_PATH = PROJECT_ROOT / "backend.log"
+# Records the backend we launched. This host process is short-lived -- the
+# browser starts it per message and closes it on reply -- so "am I already
+# starting one?" has to live on disk, not in memory.
+PID_PATH = PROJECT_ROOT / ".backend.pid"
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    return True
+
+
+def launched_backend_pid() -> int | None:
+    """PID of a backend we started that's still alive, if any."""
+    try:
+        pid = int(PID_PATH.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid_alive(pid) else None
+
+
+def log_tail(lines: int = 15) -> str:
+    try:
+        return "".join(LOG_PATH.read_text(errors="replace").splitlines(keepends=True)[-lines:])
+    except OSError:
+        return ""
 
 
 def read_message():
@@ -61,24 +89,50 @@ def start_backend() -> dict:
             "ok": False,
             "error": f"Backend not installed at {BACKEND}. Run scripts/install.sh first.",
         }
+
+    # The extension retries every couple of seconds while the backend loads
+    # models, and every one of those retries lands here. Without this guard we
+    # spawn a new backend each time -- a dozen processes loading models at once
+    # and fighting over the port, which never resolves.
+    existing = launched_backend_pid()
+    if existing is not None:
+        return {"ok": True, "status": "starting", "pid": existing}
+
+    if PID_PATH.exists():
+        # We launched one and it died rather than reaching the listening state.
+        tail = log_tail()
+        PID_PATH.unlink(missing_ok=True)
+        return {
+            "ok": False,
+            "error": "The backend started but exited. Last output:\n" + (tail or "(log empty)"),
+            "logPath": str(LOG_PATH),
+        }
+
     try:
         log = open(LOG_PATH, "ab", buffering=0)
-        subprocess.Popen(
+        env = dict(os.environ)
+        # Without this the backend's own progress output sits in a buffer and
+        # never reaches the log, which makes failures undiagnosable.
+        env["PYTHONUNBUFFERED"] = "1"
+        process = subprocess.Popen(
             [str(BACKEND), "serve"],
             stdout=log,
             stderr=log,
             stdin=subprocess.DEVNULL,
             cwd=str(PROJECT_ROOT),
+            env=env,
             # Detach so the backend outlives this short-lived host process
             # (the browser closes the host as soon as the message is answered).
             start_new_session=True,
         )
+        PID_PATH.write_text(str(process.pid))
     except Exception as e:  # noqa: BLE001 - reported to the extension
         return {"ok": False, "error": f"Could not start backend: {type(e).__name__}: {e}"}
 
     return {
         "ok": True,
         "status": "starting",
+        "pid": process.pid,
         "message": "Backend starting; it loads models for ~20s before accepting connections.",
         "logPath": str(LOG_PATH),
     }
@@ -92,6 +146,8 @@ def handle(message) -> dict:
 
     if kind == "ensure-backend":
         if backend_listening():
+            # Someone else's backend (or ours) is up; clear any stale record.
+            PID_PATH.unlink(missing_ok=True)
             return {"ok": True, "status": "running"}
         return start_backend()
 

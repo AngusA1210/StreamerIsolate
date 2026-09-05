@@ -293,7 +293,16 @@ async def run_server(
     async def handler(websocket):
         await _handle_connection(websocket, isolator, vocal_classifier)
 
-    async with websockets.serve(handler, host, port, max_size=None):
+    try:
+        server = await websockets.serve(handler, host, port, max_size=None)
+    except OSError as e:
+        # Most often "address already in use": another backend is up, which is
+        # fine on its own but confusing if it goes unreported.
+        print(f"Could not listen on ws://{host}:{port}: {e}")
+        print("Another StreamerIsolate backend is probably already running.")
+        raise SystemExit(1)
+
+    async with server:
         print(f"StreamerIsolate bridge server listening on ws://{host}:{port}")
         await asyncio.Future()  # run forever
 

@@ -47,7 +47,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Offscreen tells us when the first processed audio arrives, i.e. when
     // the initial buffering wait is over.
     setPhase(message.tabId, message.phase);
-    chrome.action.setBadgeText({ text: message.phase === "running" ? "ON" : "···", tabId: message.tabId });
+    setBadge(message.tabId, message.phase === "running" ? "ON" : "···");
     return false;
   }
   if (message.type === "measured-delay") {
@@ -76,6 +76,15 @@ async function ensureOffscreenDocument() {
   });
 }
 
+// Badge and tab messaging both reject once a tab is gone, which happens
+// routinely on the tab-closed path. Keep those failures quiet.
+function setBadge(tabId, text) {
+  chrome.action.setBadgeText({ text, tabId }).catch(() => {});
+  if (text) {
+    chrome.action.setBadgeBackgroundColor({ color: "#2e7d32", tabId }).catch(() => {});
+  }
+}
+
 async function startCapture(tabId, streamId, vocalStrength) {
   await ensureBackend();
   await ensureOffscreenDocument();
@@ -83,15 +92,16 @@ async function startCapture(tabId, streamId, vocalStrength) {
 
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
-    chrome.tabs.sendMessage(tabId, { type: "start-sync", targetDelaySeconds: TARGET_DELAY_SECONDS });
+    chrome.tabs
+      .sendMessage(tabId, { type: "start-sync", targetDelaySeconds: TARGET_DELAY_SECONDS })
+      .catch(() => {});
   } catch (err) {
     // Video sync is a bonus on top of audio isolation -- don't block capture
     // on it (e.g. the tab may be a chrome:// page or otherwise unscriptable).
     console.warn("[StreamerIsolate] could not start video sync:", err);
   }
 
-  chrome.action.setBadgeText({ text: "···", tabId });
-  chrome.action.setBadgeBackgroundColor({ color: "#2e7d32", tabId });
+  setBadge(tabId, "···");
   await setCapturing(tabId, true);
   await setPhase(tabId, "buffering");
 }
@@ -99,7 +109,7 @@ async function startCapture(tabId, streamId, vocalStrength) {
 async function stopCapture(tabId) {
   chrome.runtime.sendMessage({ type: "stop-capture", tabId });
   chrome.tabs.sendMessage(tabId, { type: "stop-sync" }).catch(() => {});
-  chrome.action.setBadgeText({ text: "", tabId });
+  setBadge(tabId, "");
   await setCapturing(tabId, false);
   await setPhase(tabId, "off");
 }

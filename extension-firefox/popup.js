@@ -171,3 +171,7 @@ window.addEventListener("unload", () => {
 });
 
 init();
+
+// Show the loaded build, so it's always clear which version is running.
+const versionEl = document.getElementById("si-version");
+if (versionEl) versionEl.textContent = `v${api.runtime.getManifest().version}`;

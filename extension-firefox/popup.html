@@ -68,6 +68,12 @@
       .field-label span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
       input[type="range"] { width: 100%; accent-color: var(--accent); }
       .hint { margin-top: 8px; font-size: 11px; color: var(--muted); }
+      .version {
+        margin-top: 10px;
+        font-size: 10px;
+        color: var(--muted);
+        text-align: right;
+      }
     </style>
   </head>
   <body>
@@ -95,6 +101,8 @@
       does the audio through a virtual audio device. Start it first, then use
       this popup.
     </div>
+
+    <div class="version" id="si-version"></div>
 
     <script src="popup.js"></script>
   </body>
