@@ -22,6 +22,7 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HOST = "127.0.0.1"
@@ -43,13 +44,42 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+# If a backend we launched hasn't started listening within this long, it isn't
+# coming up -- stop waiting on it and let a fresh attempt (or an error) happen.
+STARTUP_GRACE_SECONDS = 90
+
+
+def is_our_backend(pid: int) -> bool:
+    """True only if that PID is actually our backend.
+
+    PIDs get recycled, so a bare liveness check can latch onto an unrelated
+    process and leave us waiting forever on a backend that never existed.
+    """
+    if not pid_alive(pid):
+        return False
+    try:
+        cmd = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return False
+    return "streamerisolate" in cmd
+
+
 def launched_backend_pid() -> int | None:
     """PID of a backend we started that's still alive, if any."""
     try:
-        pid = int(PID_PATH.read_text().strip())
-    except (OSError, ValueError):
+        raw = PID_PATH.read_text().strip().split()
+        pid = int(raw[0])
+        started_at = float(raw[1]) if len(raw) > 1 else 0.0
+    except (OSError, ValueError, IndexError):
         return None
-    return pid if pid_alive(pid) else None
+    if started_at and time.time() - started_at > STARTUP_GRACE_SECONDS:
+        return None
+    return pid if is_our_backend(pid) else None
 
 
 def log_tail(lines: int = 15) -> str:
@@ -99,14 +129,25 @@ def start_backend() -> dict:
         return {"ok": True, "status": "starting", "pid": existing}
 
     if PID_PATH.exists():
-        # We launched one and it died rather than reaching the listening state.
-        tail = log_tail()
+        died_recently = False
+        try:
+            parts = PID_PATH.read_text().strip().split()
+            started_at = float(parts[1]) if len(parts) > 1 else 0.0
+            died_recently = bool(started_at) and (time.time() - started_at) <= STARTUP_GRACE_SECONDS
+        except (OSError, ValueError, IndexError):
+            pass
         PID_PATH.unlink(missing_ok=True)
-        return {
-            "ok": False,
-            "error": "The backend started but exited. Last output:\n" + (tail or "(log empty)"),
-            "logPath": str(LOG_PATH),
-        }
+        if died_recently:
+            # We launched one moments ago and it exited instead of listening --
+            # that's a real failure worth reporting rather than retrying blindly.
+            return {
+                "ok": False,
+                "error": "The backend started but exited. Last output:\n"
+                + (log_tail() or "(log empty)"),
+                "logPath": str(LOG_PATH),
+            }
+        # Otherwise the record is just stale (old, or a recycled PID); drop it
+        # and start cleanly below.
 
     try:
         log = open(LOG_PATH, "ab", buffering=0)
@@ -125,7 +166,7 @@ def start_backend() -> dict:
             # (the browser closes the host as soon as the message is answered).
             start_new_session=True,
         )
-        PID_PATH.write_text(str(process.pid))
+        PID_PATH.write_text(f"{process.pid} {time.time()}")
     except Exception as e:  # noqa: BLE001 - reported to the extension
         return {"ok": False, "error": f"Could not start backend: {type(e).__name__}: {e}"}
 

@@ -41,22 +41,8 @@ async function tryConnect() {
   }));
 
   if (!result || !result.ok) {
-    // The native host starts the backend for us, so the usual case here is
-    // simply "still loading models" -- say that rather than crying error.
-    // Only after a while do we suggest the manual fallback.
     connectAttempts += 1;
-    if (connectAttempts < 15) {
-      statusEl.textContent = "Starting backend… (loads models, ~20s)";
-      statusEl.className = "status";
-    } else {
-      statusEl.innerHTML =
-        "Backend still not reachable. Run <code>./scripts/install.sh</code> once, " +
-        "or start it manually with <code>streamerisolate serve</code>." +
-        "<br><span class='detail'></span>";
-      statusEl.className = "status err";
-      const detail = statusEl.querySelector(".detail");
-      if (detail && result && result.error) detail.textContent = result.error;
-    }
+    showConnectFailure(result, connectAttempts);
     if (!retryTimer) retryTimer = setInterval(tryConnect, 2000);
     return;
   }
@@ -68,6 +54,48 @@ async function tryConnect() {
   }
   await refresh();
   if (!pollTimer) pollTimer = setInterval(refresh, 700);
+}
+
+// Each failure mode needs a different action from the user, so name the step
+// that actually failed instead of a blanket "starting backend".
+function showConnectFailure(result, attempts) {
+  const stage = result?.stage;
+  const detail = result?.error ? `<span class='detail'>${escapeHtml(result.error)}</span>` : "";
+
+  if (stage === "host-unavailable") {
+    statusEl.innerHTML =
+      "Can't reach the launcher, so the backend can't be started for you. Run " +
+      "<code>./scripts/install.sh</code> once, then reload this extension.<br>" +
+      detail;
+    statusEl.className = "status err";
+    return;
+  }
+
+  if (stage === "socket-blocked") {
+    statusEl.innerHTML =
+      "The backend is running, but the connection to it was refused or blocked." +
+      "<br>" +
+      detail;
+    statusEl.className = "status err";
+    return;
+  }
+
+  // Still loading models is the normal case for the first ~20s.
+  if (attempts < 15) {
+    statusEl.textContent = "Starting backend… (loads models, ~20s)";
+    statusEl.className = "status";
+    return;
+  }
+  statusEl.innerHTML =
+    "Backend still not reachable after 30s. Check <code>backend.log</code> in the " +
+    "project folder.<br>" + detail;
+  statusEl.className = "status err";
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 async function refresh() {

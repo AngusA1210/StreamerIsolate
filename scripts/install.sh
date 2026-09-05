@@ -104,12 +104,14 @@ write_manifest "$HOME/Library/Application Support/Mozilla/NativeMessagingHosts" 
   "Firefox" "allowed_extensions" "\"$FIREFOX_EXT_ID\""
 
 if [ -n "$CHROME_EXT_ID" ]; then
-  for chrome_dir in \
-    "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts" \
-    "$HOME/Library/Application Support/Chromium/NativeMessagingHosts"; do
-    [ -d "$(dirname "$chrome_dir")" ] && write_manifest "$chrome_dir" "Chrome" \
-      "allowed_origins" "\"chrome-extension://$CHROME_EXT_ID/\""
-  done
+  # Both Chrome and Chromium may be installed; label them distinctly so the
+  # output doesn't just say "Chrome" twice.
+  chrome_base="$HOME/Library/Application Support/Google/Chrome"
+  chromium_base="$HOME/Library/Application Support/Chromium"
+  [ -d "$chrome_base" ] && write_manifest "$chrome_base/NativeMessagingHosts" "Chrome" \
+    "allowed_origins" "\"chrome-extension://$CHROME_EXT_ID/\""
+  [ -d "$chromium_base" ] && write_manifest "$chromium_base/NativeMessagingHosts" "Chromium" \
+    "allowed_origins" "\"chrome-extension://$CHROME_EXT_ID/\""
 else
   echo "    skipped Chrome (no extension ID given)"
 fi

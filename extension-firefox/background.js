@@ -98,13 +98,31 @@ function openSocket() {
   });
 }
 
+// Returns a structured result rather than throwing, so the popup can say
+// which step failed. Previously any failure surfaced as a generic "Starting
+// backend…", which hid whether the launcher was missing, the backend was
+// still loading, or the socket itself was being refused.
 async function connect() {
-  if (socket && socket.readyState === WebSocket.OPEN) return;
-  if (!(await ensureBackend()).ok) {
-    // Host missing or failed -- still worth trying, the backend may be
-    // running from a terminal.
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    return { ok: true, stage: "connected" };
   }
-  await openSocket();
+
+  const host = await ensureBackend();
+
+  try {
+    await openSocket();
+    return { ok: true, stage: "connected" };
+  } catch (e) {
+    if (!host.ok) {
+      return { ok: false, stage: "host-unavailable", error: host.error };
+    }
+    if (host.status === "running") {
+      // The backend is listening yet the socket still failed -- that's the
+      // connection being refused or blocked, not a missing backend.
+      return { ok: false, stage: "socket-blocked", error: e.message };
+    }
+    return { ok: false, stage: "backend-starting", error: e.message };
+  }
 }
 
 function handleServerMessage(msg) {
@@ -168,27 +186,28 @@ api.runtime.onMessage.addListener((message) => {
   }
 
   if (message.type === "connect") {
-    return connect()
-      .then(() => ({ ok: true }))
-      .catch((err) => ({ ok: false, error: err.message }));
+    return connect().catch((err) => ({
+      ok: false,
+      stage: "unexpected",
+      error: err.message,
+    }));
   }
 
   if (message.type === "start") {
     activeTabId = message.tabId;
     lastStrength = message.vocalStrength;
-    return connect()
-      .then(() => {
-        socket.send(
-          JSON.stringify({
-            type: "control-start",
-            inputDevice: message.inputDevice,
-            outputDevice: message.outputDevice,
-            vocalStrength: message.vocalStrength,
-          })
-        );
-        return { ok: true };
-      })
-      .catch((err) => ({ ok: false, error: err.message }));
+    return connect().then((result) => {
+      if (!result.ok) return result;
+      socket.send(
+        JSON.stringify({
+          type: "control-start",
+          inputDevice: message.inputDevice,
+          outputDevice: message.outputDevice,
+          vocalStrength: message.vocalStrength,
+        })
+      );
+      return { ok: true };
+    });
   }
 
   if (message.type === "stop") {
