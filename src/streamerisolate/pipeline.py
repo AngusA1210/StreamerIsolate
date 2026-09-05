@@ -33,7 +33,7 @@ class Pipeline:
         gain: float = 1.0,
         block_size: int = 1024,
         vocal_classifier: VocalClassifier | None = None,
-        vocal_strength: float = 0.85,
+        vocal_strength: float = 1.0,
     ):
         if overlap_seconds >= chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
@@ -52,6 +52,7 @@ class Pipeline:
         self.gain = gain
         self.block_size = block_size
 
+        self.chunk_seconds = chunk_seconds
         self.chunk_samples = int(chunk_seconds * self.samplerate)
         self.overlap_samples = int(overlap_seconds * self.samplerate)
         self.hop_samples = self.chunk_samples - self.overlap_samples
@@ -67,6 +68,7 @@ class Pipeline:
         # processed, i.e. while the user is still waiting for audio.
         self.chunks_emitted = 0
         self.error: str | None = None
+        self._last_process_seconds = 0.0
 
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
@@ -131,6 +133,7 @@ class Pipeline:
             chunk = self._input_buffer[: self.chunk_samples].copy()
             self._input_buffer = self._input_buffer[self.hop_samples :]
 
+        started = time.time()
         tensor = torch.from_numpy(chunk.T.astype(np.float32))  # (channels, samples)
         vocals = self.isolator.isolate_speech(tensor)  # (channels, samples)
         out = vocals.numpy().T * self.gain  # (samples, channels)
@@ -154,6 +157,19 @@ class Pipeline:
         self._prev_tail = out[self.hop_samples : self.hop_samples + self.overlap_samples]
         self._output_queue.put(emit)
         self.chunks_emitted += 1
+        self._last_process_seconds = time.time() - started
+
+    @property
+    def estimated_delay_seconds(self) -> float:
+        """Roughly how far the played audio lags the live input.
+
+        A full chunk has to accumulate before processing can start, then that
+        chunk takes some time to process, and anything already queued plays
+        first. Used by the Firefox extension to delay its video overlay to
+        match (Chrome measures this directly instead -- it can see both ends).
+        """
+        queued_seconds = self._output_queue.qsize() * self.hop_samples / self.samplerate
+        return self.chunk_seconds + self._last_process_seconds + queued_seconds
 
     # --- lifecycle ---
 

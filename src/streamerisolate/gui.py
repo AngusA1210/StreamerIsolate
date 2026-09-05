@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt, QSettings, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QSettings, QThread, QTimer, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -97,13 +98,12 @@ class MainWindow(QMainWindow):
 
         subtitle = QLabel("Removes background music from a livestream, keeping only speech.")
         subtitle.setWordWrap(True)
-        subtitle.setStyleSheet("color: palette(mid);")
         layout.addWidget(subtitle)
 
         help_row = QHBoxLayout()
         self.help_button = QPushButton("How do I set this up?")
         self.help_button.setFlat(True)
-        self.help_button.setStyleSheet("text-align: left; color: palette(link);")
+        self.help_button.setStyleSheet("text-align: left;")
         self.help_button.clicked.connect(self._show_help)
         help_row.addWidget(self.help_button)
         help_row.addStretch()
@@ -135,14 +135,13 @@ class MainWindow(QMainWindow):
         strength_label_row = QHBoxLayout()
         strength_label_row.addWidget(QLabel("Vocal attenuation"))
         strength_label_row.addStretch()
-        self.strength_value = QLabel("85%")
-        self.strength_value.setStyleSheet("color: palette(mid);")
+        self.strength_value = QLabel("100%")
         strength_label_row.addWidget(self.strength_value)
         layout.addLayout(strength_label_row)
 
         self.strength_slider = QSlider(Qt.Horizontal)
         self.strength_slider.setRange(0, 100)
-        self.strength_slider.setValue(85)
+        self.strength_slider.setValue(100)
         self.strength_slider.valueChanged.connect(self._on_strength_changed)
         layout.addWidget(self.strength_slider)
 
@@ -150,8 +149,14 @@ class MainWindow(QMainWindow):
             "How hard detected singing is cut. Takes effect immediately, even while running."
         )
         strength_hint.setWordWrap(True)
-        strength_hint.setStyleSheet("color: palette(mid); font-size: 11px;")
+        strength_hint.setStyleSheet("font-size: 11px;")
         layout.addWidget(strength_hint)
+
+        # Text that should read as de-emphasised. Colours come from the live
+        # palette rather than being hardcoded, so this stays legible in dark
+        # mode -- an earlier version used palette(mid), which is a *shading*
+        # role (dark in both themes) and was unreadable on a dark background.
+        self._muted_labels = [subtitle, self.strength_value, strength_hint]
 
         layout.addSpacing(4)
 
@@ -163,12 +168,33 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel("Idle")
         self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("color: palette(mid);")
         layout.addWidget(self.status_label)
 
         layout.addStretch()
         self.setCentralWidget(central)
         self.setMinimumWidth(430)
+        self._apply_theme_colors()
+
+    # --- theming ---
+
+    def _is_dark(self) -> bool:
+        return self.palette().color(QPalette.Window).lightness() < 128
+
+    def _muted(self) -> str:
+        return "#9e9e9e" if self._is_dark() else "#6b6b6b"
+
+    def _apply_theme_colors(self):
+        muted = self._muted()
+        for label in getattr(self, "_muted_labels", []):
+            existing = label.styleSheet().replace(f"color: {muted};", "").strip()
+            label.setStyleSheet(f"color: {muted}; {existing}")
+        self._set_status(self.status_label.text(), **getattr(self, "_status_kind", {}))
+
+    def changeEvent(self, event):
+        # Follows the system switching between light and dark while open.
+        if event.type() == QEvent.PaletteChange:
+            self._apply_theme_colors()
+        super().changeEvent(event)
 
     def _separator(self) -> QFrame:
         line = QFrame()
@@ -208,10 +234,14 @@ class MainWindow(QMainWindow):
             combo.setCurrentIndex(index)
 
     def _restore_settings(self):
-        strength = self.settings.value("vocalStrength", 85, type=int)
+        strength = self.settings.value("vocalStrength", 100, type=int)
         self.strength_slider.setValue(strength)
-        self._reselect(self.input_combo, self.settings.value("inputDevice", type=int))
-        self._reselect(self.output_combo, self.settings.value("outputDevice", type=int))
+
+        # Fall back to the system defaults rather than whatever happens to be
+        # first in the list.
+        default_in, default_out = audio_io.default_devices()
+        self._reselect(self.input_combo, self.settings.value("inputDevice", default_in, type=int))
+        self._reselect(self.output_combo, self.settings.value("outputDevice", default_out, type=int))
 
     # --- actions ---
 
@@ -304,13 +334,17 @@ class MainWindow(QMainWindow):
         self.output_combo.setEnabled(enabled)
 
     def _set_status(self, text: str, error: bool = False, ok: bool = False):
+        self._status_kind = {"error": error, "ok": ok}
         self.status_label.setText(text)
+        dark = self._is_dark()
         if error:
-            self.status_label.setStyleSheet("color: #c62828;")
+            self.status_label.setStyleSheet(f"color: {'#ef5350' if dark else '#c62828'};")
         elif ok:
-            self.status_label.setStyleSheet("color: #2e7d32; font-weight: 600;")
+            self.status_label.setStyleSheet(
+                f"color: {'#66bb6a' if dark else '#2e7d32'}; font-weight: 600;"
+            )
         else:
-            self.status_label.setStyleSheet("color: palette(mid);")
+            self.status_label.setStyleSheet(f"color: {self._muted()};")
 
     def closeEvent(self, event):
         if self.pipeline is not None:

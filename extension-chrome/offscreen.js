@@ -15,7 +15,7 @@ let workletNode = null;
 let gainNode = null;
 let socket = null;
 let playCursor = 0;
-let vocalStrength = 0.85;
+let vocalStrength = 1.0;
 
 // --- end-to-end delay measurement (drives the video overlay's delay) ---
 // The processed stream comes back in the same order it went out, so output

@@ -31,6 +31,8 @@ import torch
 import websockets
 from scipy.signal import resample_poly
 
+from . import audio_io
+from .pipeline import Pipeline
 from .separator import SpeechIsolator
 from .vocal_classifier import ClassifierState, VocalClassifier
 
@@ -58,7 +60,7 @@ class StreamSession:
         overlap_seconds: float = 0.75,
         gain: float = 1.0,
         vocal_classifier: VocalClassifier | None = None,
-        vocal_strength: float = 0.85,
+        vocal_strength: float = 1.0,
     ):
         if overlap_seconds >= chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
@@ -129,13 +131,55 @@ class StreamSession:
         return outputs
 
 
+async def _push_status(websocket, pipeline: Pipeline) -> None:
+    """Keeps a control client (the Firefox extension) informed while its
+    pipeline runs: whether audio has started flowing yet, how far behind it
+    is so the video overlay can match, and any failure.
+
+    The raw delay estimate swings by a whole hop as the output queue fills and
+    drains, so it's smoothed here -- feeding that swing straight to the video
+    overlay would make the picture visibly jump every few seconds.
+    """
+    smoothed: float | None = None
+    try:
+        while True:
+            raw = pipeline.estimated_delay_seconds
+            smoothed = raw if smoothed is None else 0.25 * raw + 0.75 * smoothed
+            await websocket.send(
+                json.dumps(
+                    {
+                        "type": "status",
+                        "phase": "running" if pipeline.chunks_emitted > 0 else "buffering",
+                        "delaySeconds": round(smoothed, 3),
+                        "error": pipeline.error,
+                    }
+                )
+            )
+            if pipeline.error:
+                return
+            await asyncio.sleep(0.5)
+    except (websockets.exceptions.ConnectionClosed, asyncio.CancelledError):
+        return
+
+
 async def _handle_connection(
     websocket, isolator: SpeechIsolator, vocal_classifier: VocalClassifier | None
 ) -> None:
     session: StreamSession | None = None
+    control_pipeline: Pipeline | None = None
+    status_task: asyncio.Task | None = None
     loop = asyncio.get_running_loop()
     peer = websocket.remote_address
     print(f"[server] client connected: {peer}")
+
+    def stop_control_pipeline():
+        nonlocal control_pipeline, status_task
+        if status_task is not None:
+            status_task.cancel()
+            status_task = None
+        if control_pipeline is not None:
+            control_pipeline.stop()
+            control_pipeline = None
 
     try:
         async for message in websocket:
@@ -151,19 +195,70 @@ async def _handle_connection(
                             overlap_seconds=float(data.get("overlapSeconds", 0.75)),
                             gain=float(data.get("gain", 1.0)),
                             vocal_classifier=vocal_classifier,
-                            vocal_strength=float(data.get("vocalStrength", 0.85)),
+                            vocal_strength=float(data.get("vocalStrength", 1.0)),
                         )
                         await websocket.send(json.dumps({"type": "ready"}))
                         print(f"[server] session started: {data}")
                     except Exception as e:  # noqa: BLE001 - report back to client
                         await websocket.send(json.dumps({"type": "error", "message": str(e)}))
                 elif data.get("type") == "settings":
-                    # Live adjustment from the extension's strength slider.
-                    if session is not None and "vocalStrength" in data:
-                        session.vocal_strength = float(data["vocalStrength"])
-                        print(f"[server] vocal strength -> {session.vocal_strength:.2f}")
+                    # Live adjustment from either extension's strength slider.
+                    if "vocalStrength" in data:
+                        strength = float(data["vocalStrength"])
+                        if session is not None:
+                            session.vocal_strength = strength
+                        if control_pipeline is not None:
+                            control_pipeline.vocal_strength = strength
+                        print(f"[server] vocal strength -> {strength:.2f}")
                 elif data.get("type") == "stop":
                     session = None
+
+                # --- control mode: the client drives a local device pipeline
+                # rather than streaming audio itself. This is how Firefox works,
+                # since it can't capture tab audio the way Chrome can.
+                elif data.get("type") == "control-hello":
+                    devices = audio_io.list_devices()
+                    default_in, default_out = audio_io.default_devices()
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "type": "devices",
+                                "inputs": [
+                                    {"index": d.index, "name": d.name}
+                                    for d in devices
+                                    if d.max_input_channels > 0
+                                ],
+                                "outputs": [
+                                    {"index": d.index, "name": d.name}
+                                    for d in devices
+                                    if d.max_output_channels > 0
+                                ],
+                                "defaultInput": default_in,
+                                "defaultOutput": default_out,
+                            }
+                        )
+                    )
+                elif data.get("type") == "control-start":
+                    try:
+                        stop_control_pipeline()
+                        control_pipeline = Pipeline(
+                            output_device=int(data["outputDevice"]),
+                            isolator=isolator,
+                            input_device=int(data["inputDevice"]),
+                            vocal_classifier=vocal_classifier,
+                            vocal_strength=float(data.get("vocalStrength", 1.0)),
+                        )
+                        control_pipeline.start()
+                        status_task = asyncio.create_task(_push_status(websocket, control_pipeline))
+                        await websocket.send(json.dumps({"type": "control-started"}))
+                        print(f"[server] control pipeline started: {data}")
+                    except Exception as e:  # noqa: BLE001 - report back to client
+                        stop_control_pipeline()
+                        await websocket.send(json.dumps({"type": "error", "message": str(e)}))
+                elif data.get("type") == "control-stop":
+                    stop_control_pipeline()
+                    await websocket.send(json.dumps({"type": "control-stopped"}))
+                    print("[server] control pipeline stopped")
             else:
                 if session is None:
                     continue
@@ -173,6 +268,9 @@ async def _handle_connection(
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
+        # Don't leave a device pipeline running (and holding the audio
+        # devices) if the controlling extension goes away.
+        stop_control_pipeline()
         print(f"[server] client disconnected: {peer}")
 
 

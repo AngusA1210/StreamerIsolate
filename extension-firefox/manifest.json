@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "StreamerIsolate",
+  "version": "0.1.0",
+  "description": "Removes background music from a livestream, keeping only speech. Drives the StreamerIsolate desktop backend.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["*://*.twitch.tv/*"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_title": "StreamerIsolate",
+    "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "streamerisolate@angusa1210.github.io",
+      "strict_min_version": "128.0"
+    }
+  }
+}

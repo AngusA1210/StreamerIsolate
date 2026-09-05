@@ -40,10 +40,10 @@ def main() -> None:
     run.add_argument(
         "--vocal-strength",
         type=float,
-        default=0.85,
+        default=1.0,
         help="How hard to attenuate detected singing, 0..1 (0 = off, 1 = cut as hard as possible). "
         "The Chrome extension exposes this as a live slider; this is the equivalent for the "
-        "standalone pipeline (default: 0.85)",
+        "standalone pipeline (default: 1.0)",
     )
 
     serve = sub.add_parser(

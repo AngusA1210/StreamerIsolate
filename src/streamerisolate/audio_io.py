@@ -40,6 +40,17 @@ def print_devices() -> None:
         print(f"[{d.index:2d}] {d.name}  ({', '.join(kind)}, {d.default_samplerate:.0f} Hz)")
 
 
+def default_devices() -> tuple[int | None, int | None]:
+    """The system's current default (input, output) device indices."""
+    try:
+        default_in, default_out = sd.default.device
+    except Exception:  # noqa: BLE001 - no defaults configured
+        return None, None
+    in_index = default_in if isinstance(default_in, int) and default_in >= 0 else None
+    out_index = default_out if isinstance(default_out, int) and default_out >= 0 else None
+    return in_index, out_index
+
+
 def resolve_device(identifier: str | int) -> int:
     """Resolve a device by index or case-insensitive substring match on its name."""
     if isinstance(identifier, int) or str(identifier).isdigit():

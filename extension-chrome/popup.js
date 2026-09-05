@@ -18,7 +18,7 @@ async function init() {
   activeTab = tab;
 
   const stored = await chrome.storage.local.get("vocalStrength");
-  const strength = typeof stored.vocalStrength === "number" ? stored.vocalStrength : 0.85;
+  const strength = typeof stored.vocalStrength === "number" ? stored.vocalStrength : 1.0;
   strengthEl.value = Math.round(strength * 100);
   strengthValueEl.textContent = `${Math.round(strength * 100)}%`;
 
