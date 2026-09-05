@@ -1,5 +1,5 @@
 // Firefox popup: device pickers, start/stop and the strength slider. All of
-// it is relayed through background.js to the desktop backend, which owns the
+// it is relayed through background.js to the StreamerIsolate backend, which owns the
 // actual audio pipeline (see background.js for why).
 
 const api = globalThis.browser ?? globalThis.chrome;
@@ -26,7 +26,9 @@ async function init() {
 
   const connectResult = await api.runtime.sendMessage({ type: "connect" });
   if (!connectResult || !connectResult.ok) {
-    statusEl.textContent = "Backend not running — start StreamerIsolate first.";
+    // Name the exact command -- "start the backend" isn't actionable enough.
+    statusEl.innerHTML =
+      'Backend not running. In a terminal, run:<br><code>streamerisolate serve</code>';
     statusEl.className = "status err";
     return;
   }

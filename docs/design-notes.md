@@ -58,7 +58,7 @@ mutes the tab the instant capture starts, and the extension reconnects only
 the processed audio to the speakers. Firefox has no equivalent (Mozilla bugs
 [1443484](https://bugzilla.mozilla.org/show_bug.cgi?id=1443484) and
 [1391223](https://bugzilla.mozilla.org/show_bug.cgi?id=1391223)), which is
-why the Firefox path routes audio through a virtual device to the desktop
+why the Firefox path routes audio through a virtual device to the local
 backend instead. The Firefox extension drives that backend over the same
 local websocket and handles the video overlay.
 
@@ -102,7 +102,6 @@ delay rebuilds over a few seconds rather than replaying a stale backlog.
 | `src/streamerisolate/vocal_classifier.py` | PANNs singing-vs-speech gate |
 | `src/streamerisolate/pipeline.py` | Device capture → separate → playback |
 | `src/streamerisolate/server.py` | Local websocket: audio streaming (Chrome) and pipeline control (Firefox) |
-| `src/streamerisolate/gui.py` | PySide6 desktop app |
 | `extension-chrome/` | Chrome extension (tabCapture audio + video overlay) |
 | `extension-firefox/` | Firefox extension (backend control + video overlay) |
 | `native/capture-app-audio/` | ScreenCaptureKit experiment, superseded |

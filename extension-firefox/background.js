@@ -1,8 +1,9 @@
 // Firefox background script.
 //
 // Firefox has no tabCapture equivalent, so unlike the Chrome version this
-// extension never touches the tab's audio. Instead it *drives* the desktop
-// backend over the same local websocket: the backend captures from a virtual
+// extension never touches the tab's audio. Instead it *drives* the
+// `streamerisolate serve` backend over a local websocket: the backend
+// captures from a virtual
 // audio device, isolates speech, and plays the result itself. This script
 // relays start/stop and the strength slider, and feeds the backend's reported
 // delay to the video overlay so the picture still lines up with the sound.

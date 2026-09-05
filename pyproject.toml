@@ -11,14 +11,11 @@ dependencies = [
     "scipy",
     "websockets",
     "panns-inference",
-    "PySide6-Essentials",
 ]
 
 [project.scripts]
 streamerisolate = "streamerisolate.cli:main"
 
-[project.gui-scripts]
-streamerisolate-gui = "streamerisolate.gui:main"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -4,8 +4,8 @@ Removes background music from a livestream's audio in near-real-time, keeping
 only the streamer's speech — so you can play your own music without the two
 fighting.
 
-Works with **Chrome** (extension only), **Firefox** (extension + a virtual
-audio device), or as a **desktop app**.
+Works with **Chrome** (extension only) or **Firefox** (extension + a virtual
+audio device).
 
 ## Install
 
@@ -18,8 +18,10 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-First run downloads ~400MB of models. Then start the backend and leave it
-running:
+First run downloads ~400MB of models.
+
+Then start the backend and **leave it running** in that terminal — both
+browser extensions talk to it, and nothing works without it:
 
 ```bash
 streamerisolate serve
@@ -48,16 +50,6 @@ backend handles audio through a virtual audio device instead.
 4. In the popup, set **Capture from** to the virtual device and **Play to**
    to your speakers, then hit **Start**.
 
-## Desktop app
-
-Same thing without a browser extension:
-
-```bash
-streamerisolate-gui
-```
-
-It needs the same virtual-device setup as the Firefox path (steps 1–2 above).
-
 ## Good to know
 
 - **Starting takes a few seconds.** Models load once (~15s the first time),
@@ -75,11 +67,11 @@ It needs the same virtual-device setup as the Firefox path (steps 1–2 above).
 
 ## Status
 
-Working: Chrome extension, Firefox extension, desktop app, video sync,
-adjustable singing attenuation.
+Working: Chrome extension, Firefox extension, video sync, adjustable singing
+attenuation.
 
-Not done: packaging as a double-clickable app; Firefox audio interception
-(blocked on Firefox, would remove the virtual-device step).
+Not done: launching the backend without a terminal; Firefox audio
+interception (blocked on Firefox, would remove the virtual-device step).
 
 For how it works internally and why it's built this way, see
 [docs/design-notes.md](docs/design-notes.md).
