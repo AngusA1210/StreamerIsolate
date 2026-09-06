@@ -22,6 +22,26 @@ CHROME_EXT_ID="${1:-}"
 echo "==> StreamerIsolate setup"
 echo "    project: $PROJECT_ROOT"
 
+# macOS restricts app access to Documents/Desktop/Downloads. Browsers launch
+# the native host directly, and child processes inherit the browser's grants,
+# so a project living in one of those folders can leave the extension unable
+# to start the backend -- with no visible error beyond "can't reach the
+# launcher".
+case "$PROJECT_ROOT" in
+  "$HOME/Documents"*|"$HOME/Desktop"*|"$HOME/Downloads"*)
+    protected_dir="$(echo "${PROJECT_ROOT#"$HOME"/}" | cut -d/ -f1)"
+    echo
+    echo "    !! WARNING: this project is inside ~/$protected_dir, which macOS protects."
+    echo "       Browsers may be unable to launch the backend from here. If the"
+    echo "       extension says it can't reach the launcher, either:"
+    echo "         - move the project somewhere unprotected (e.g. ~/StreamerIsolate)"
+    echo "           and re-run this script, or"
+    echo "         - grant your browser access in System Settings > Privacy &"
+    echo "           Security > Files and Folders (or Full Disk Access)."
+    echo
+    ;;
+esac
+
 # --- 1. Python environment -------------------------------------------------
 PYTHON=""
 for candidate in python3.12 python3.11 python3.10 /opt/homebrew/bin/python3.12; do

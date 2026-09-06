@@ -195,7 +195,24 @@ def handle(message) -> dict:
     return {"ok": False, "error": f"Unknown message type: {kind!r}"}
 
 
+def note_invocation() -> None:
+    """Record that we were launched at all, somewhere always writable.
+
+    If the browser can't execute this host -- e.g. the project sits in a
+    macOS-protected folder the browser has no access to -- nothing here runs
+    and this file simply never appears. That absence is the diagnostic: it
+    separates "the browser never launched the host" from "the host ran and
+    failed".
+    """
+    try:
+        with open("/tmp/streamerisolate-host.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} host invoked (project: {PROJECT_ROOT})\n")
+    except OSError:
+        pass
+
+
 def main() -> None:
+    note_invocation()
     # Never let a stray print corrupt the framed stdout stream.
     sys.stdout.reconfigure(line_buffering=False)
     while True:

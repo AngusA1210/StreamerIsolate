@@ -99,7 +99,9 @@ function escapeHtml(text) {
 }
 
 async function refresh() {
-  const next = await api.runtime.sendMessage({ type: "get-state" });
+  // Firefox can unload the background event page, which makes this reject.
+  // Unhandled, that kills the polling loop and the popup appears frozen.
+  const next = await api.runtime.sendMessage({ type: "get-state" }).catch(() => null);
   if (!next) return;
   state = next;
 
@@ -198,7 +200,12 @@ window.addEventListener("unload", () => {
   if (retryTimer) clearInterval(retryTimer);
 });
 
-init();
+// A throw here leaves the popup blank, which reads as the extension not
+// opening at all -- surface it instead.
+init().catch((e) => {
+  statusEl.textContent = `Popup error: ${e.message}`;
+  statusEl.className = "status err";
+});
 
 // Show the loaded build, so it's always clear which version is running.
 const versionEl = document.getElementById("si-version");
