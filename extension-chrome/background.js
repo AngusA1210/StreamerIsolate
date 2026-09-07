@@ -91,7 +91,7 @@ async function startCapture(tabId, streamId, vocalStrength) {
   chrome.runtime.sendMessage({ type: "start-capture", streamId, tabId, vocalStrength });
 
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["frame-scheduler.js", "content.js"] });
     chrome.tabs
       .sendMessage(tabId, { type: "start-sync", targetDelaySeconds: TARGET_DELAY_SECONDS })
       .catch(() => {});

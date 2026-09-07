@@ -86,5 +86,17 @@ have to be ported to ONNX/WebGPU, and existing browser ports are offline-only
 so real-time isn't a given); Firefox audio interception (blocked on Firefox,
 would remove the virtual-device step).
 
+## Development
+
+```bash
+./scripts/install.sh --dev   # editable install from this checkout
+pytest                       # chunking, resampling and gain-envelope tests
+./tests/run_js_tests.sh      # extension frame-scheduling tests
+```
+
+`--dev` runs the backend from the checkout so edits take effect immediately.
+Only use it if the checkout is somewhere macOS doesn't restrict — not
+Documents, Desktop or Downloads (see design notes for why).
+
 For how it works internally and why it's built this way, see
 [docs/design-notes.md](docs/design-notes.md).

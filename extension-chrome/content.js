@@ -21,6 +21,16 @@
   const MAX_QUEUE_SECONDS = 12; // safety valve if the pump stalls
   const BITS_PER_PIXEL = 0.15; // generous: this is a local few-second buffer
   const TARGET_FRAMERATE = 60; // encoder hint; actual rate follows the source
+  // Decode this far ahead of when a frame is due on screen. Decoding takes a
+  // variable amount of time, and without a margin that variance lands
+  // straight on the display as uneven motion.
+  const DECODE_LEAD_MS = 200;
+  // Cap on decoded-but-not-yet-shown frames. These are full-size and heavy,
+  // so this only needs to cover DECODE_LEAD_MS at a high frame rate.
+  const MAX_READY_FRAMES = 30;
+  // Only skip encoding when the encoder is genuinely backed up -- every skip
+  // is a dropped source frame, i.e. a visible hitch.
+  const MAX_ENCODE_BACKLOG = 8;
 
   let video = null;
   let canvas = null;
@@ -35,10 +45,13 @@
   let configuredHeight = 0;
   let lastKeyframeAt = 0;
   let pumpHandle = null;
+  let presentHandle = null;
   let codecUnavailable = false;
 
   // Holds only not-yet-displayed chunks, i.e. roughly `targetDelayMs` worth.
   let queue = [];
+  // Decoded frames waiting for their moment, oldest first.
+  let readyFrames = [];
 
   function findVideo() {
     return document.querySelector("video");
@@ -52,7 +65,7 @@
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
     canvas.style.display = rect.width > 0 && rect.height > 0 ? "block" : "none";
-    // Canvas *resolution* is set from decoded frames (see drawDecodedFrame),
+    // Canvas *resolution* is set from decoded frames (see paint),
     // not from this CSS box -- object-fit letterboxes it like the video does.
   }
 
@@ -101,18 +114,39 @@
     });
   }
 
-  function drawDecodedFrame(frame) {
-    try {
-      if (ctx && canvas) {
-        if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-          canvas.width = frame.displayWidth;
-          canvas.height = frame.displayHeight;
-        }
-        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-      }
-    } finally {
-      frame.close();
+  function queueDecodedFrame(frame) {
+    // A frame's timestamp is the capture time we stamped on it when encoding,
+    // so it already knows when it is due: capture time plus the delay we're
+    // holding video back by. Painting on decode completion instead (as this
+    // used to) hands every scheduling wobble straight to the viewer.
+    const presentAt = frame.timestamp / 1000 + targetDelayMs;
+    readyFrames.push({ frame, presentAt });
+    while (readyFrames.length > MAX_READY_FRAMES) {
+      readyFrames.shift().frame.close();
     }
+  }
+
+  function paint(frame) {
+    if (!ctx || !canvas) return;
+    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+      canvas.width = frame.displayWidth;
+      canvas.height = frame.displayHeight;
+    }
+    ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+  }
+
+  function presentLoop() {
+    if (!running) return;
+    const now = performance.now();
+
+    const { due, dropped } = globalThis.__streamerIsolateScheduler.pickDueFrame(readyFrames, now);
+    for (const stale of dropped) stale.frame.close();
+    if (due) {
+      paint(due.frame);
+      due.frame.close();
+    }
+
+    presentHandle = requestAnimationFrame(presentLoop);
   }
 
   function resetDecoder() {
@@ -124,7 +158,7 @@
       }
     }
     decoder = new VideoDecoder({
-      output: drawDecodedFrame,
+      output: queueDecodedFrame,
       error: (e) => console.warn("[StreamerIsolate] decoder error:", e),
     });
     dropToNextKeyframe();
@@ -175,7 +209,7 @@
       if (width && height && !codecUnavailable) {
         if (width !== configuredWidth || height !== configuredHeight) {
           setupEncoder(width, height, TARGET_FRAMERATE);
-        } else if (encoder && encoder.state === "configured" && encoder.encodeQueueSize < 4) {
+        } else if (encoder && encoder.state === "configured" && encoder.encodeQueueSize < MAX_ENCODE_BACKLOG) {
           // Skipping while the encoder is backed up keeps a slow machine from
           // building an ever-growing encode backlog.
           const nowMs = performance.now();
@@ -202,7 +236,8 @@
   function pump() {
     if (!running) return;
     const now = performance.now();
-    const cutoff = now - targetDelayMs;
+    // Decode early; presentLoop handles the actual timing.
+    const cutoff = now - targetDelayMs + DECODE_LEAD_MS;
 
     while (queue.length && queue[0].capturedAt <= cutoff) {
       const item = queue.shift();
@@ -233,6 +268,8 @@
     // let the delay rebuild.
     if (!running || document.hidden) return;
     queue = [];
+    for (const item of readyFrames) item.frame.close();
+    readyFrames = [];
     lastKeyframeAt = 0;
     resetDecoder();
   }
@@ -269,6 +306,7 @@
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     queue = [];
+    readyFrames = [];
     configuredWidth = 0;
     configuredHeight = 0;
     codecUnavailable = false;
@@ -277,6 +315,7 @@
     resetDecoder();
     video.requestVideoFrameCallback(onVideoFrame);
     pumpHandle = requestAnimationFrame(pump);
+    presentHandle = requestAnimationFrame(presentLoop);
   }
 
   function stop() {
@@ -286,6 +325,9 @@
     window.removeEventListener("resize", positionCanvas);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     if (pumpHandle) cancelAnimationFrame(pumpHandle);
+    if (presentHandle) cancelAnimationFrame(presentHandle);
+    for (const item of readyFrames) item.frame.close();
+    readyFrames = [];
     if (encoder && encoder.state !== "closed") {
       try {
         encoder.close();

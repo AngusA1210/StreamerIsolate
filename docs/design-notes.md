@@ -157,3 +157,20 @@ So `install.sh` installs the runtime into
 logs) and points the native messaging manifests there. The checkout can then
 live anywhere — including Downloads, which is where a downloaded repo usually
 lands. `--dev` keeps the old editable-from-checkout behaviour for iteration.
+
+### Frame presentation
+
+Decoded frames are held and painted at their own due time, not when they
+finish decoding. Each frame carries the capture timestamp stamped on it at
+encode time, so its moment is simply `capture time + delay`. Painting on
+decode completion (as an earlier version did) hands every bit of decode-time
+variance straight to the viewer as uneven motion, even though the source
+frames were evenly spaced.
+
+The pump therefore decodes ahead by `DECODE_LEAD_MS` to absorb that variance,
+and when several frames are already due — meaning we fell behind — only the
+newest is painted; the older ones are stale and showing them would just be a
+stutter. That selection is the one piece of pure logic here, so it lives in
+`frame-scheduler.js` and is unit-tested (`tests/test_frame_scheduler.js`),
+including that every frame removed from the buffer is accounted for: decoded
+frames are a scarce resource and leaking them stalls the decoder.

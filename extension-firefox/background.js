@@ -165,7 +165,7 @@ function handleServerMessage(msg) {
 async function startOverlay() {
   if (activeTabId == null) return;
   try {
-    await api.scripting.executeScript({ target: { tabId: activeTabId }, files: ["content.js"] });
+    await api.scripting.executeScript({ target: { tabId: activeTabId }, files: ["frame-scheduler.js", "content.js"] });
     api.tabs
       .sendMessage(activeTabId, { type: "start-sync", targetDelaySeconds: 3.5 })
       .catch(() => {});
