@@ -1,46 +1,68 @@
 #!/bin/bash
 # One-time setup for StreamerIsolate.
 #
-# Creates the Python environment, fetches the models, and registers the native
-# messaging host so the browser extension can start the backend itself. After
-# this, using StreamerIsolate never involves a terminal.
+# Installs the backend, fetches the models, and registers the native messaging
+# host so the browser extension can start everything itself. After this, using
+# StreamerIsolate never involves a terminal.
 #
-#   ./scripts/install.sh                      # Firefox (+ Chrome if ID given)
+#   ./scripts/install.sh                       # Firefox (+ Chrome if ID given)
 #   ./scripts/install.sh <chrome-extension-id>
+#   ./scripts/install.sh --dev [<chrome-id>]   # run from the checkout instead
 #
 # The Chrome extension ID is shown on chrome://extensions with Developer mode
 # on. Firefox needs no ID -- the extension declares a fixed one.
+#
+# By default the runtime is installed to ~/Library/Application Support, NOT run
+# from this checkout. That's deliberate: macOS restricts app access to
+# Documents, Desktop and Downloads, and browsers launch the native host
+# directly (child processes inherit the browser's grants). A checkout in any of
+# those folders -- Downloads being the obvious one for a downloaded repo --
+# leaves the browser unable to start the backend at all. Application Support is
+# unprotected and is where an installed app belongs anyway.
+#
+# --dev installs editable from the checkout instead, so code changes take
+# effect without reinstalling. Only use it if the checkout is somewhere
+# unprotected.
 
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV="$PROJECT_ROOT/.venv"
 HOST_NAME="com.angusa1210.streamerisolate"
 FIREFOX_EXT_ID="streamerisolate@angusa1210.github.io"
+SUPPORT_DIR="$HOME/Library/Application Support/StreamerIsolate"
+
+DEV_MODE=0
+if [ "${1:-}" = "--dev" ]; then
+  DEV_MODE=1
+  shift
+fi
 CHROME_EXT_ID="${1:-}"
 
-echo "==> StreamerIsolate setup"
-echo "    project: $PROJECT_ROOT"
+if [ "$DEV_MODE" = "1" ]; then
+  VENV="$PROJECT_ROOT/.venv"
+  HOST_DIR="$PROJECT_ROOT/native-host"
+else
+  VENV="$SUPPORT_DIR/venv"
+  HOST_DIR="$SUPPORT_DIR"
+fi
 
-# macOS restricts app access to Documents/Desktop/Downloads. Browsers launch
-# the native host directly, and child processes inherit the browser's grants,
-# so a project living in one of those folders can leave the extension unable
-# to start the backend -- with no visible error beyond "can't reach the
-# launcher".
-case "$PROJECT_ROOT" in
-  "$HOME/Documents"*|"$HOME/Desktop"*|"$HOME/Downloads"*)
-    protected_dir="$(echo "${PROJECT_ROOT#"$HOME"/}" | cut -d/ -f1)"
-    echo
-    echo "    !! WARNING: this project is inside ~/$protected_dir, which macOS protects."
-    echo "       Browsers may be unable to launch the backend from here. If the"
-    echo "       extension says it can't reach the launcher, either:"
-    echo "         - move the project somewhere unprotected (e.g. ~/StreamerIsolate)"
-    echo "           and re-run this script, or"
-    echo "         - grant your browser access in System Settings > Privacy &"
-    echo "           Security > Files and Folders (or Full Disk Access)."
-    echo
-    ;;
-esac
+echo "==> StreamerIsolate setup"
+echo "    source:  $PROJECT_ROOT"
+echo "    runtime: $VENV"
+
+if [ "$DEV_MODE" = "1" ]; then
+  case "$PROJECT_ROOT" in
+    "$HOME/Documents"*|"$HOME/Desktop"*|"$HOME/Downloads"*)
+      protected_dir="$(echo "${PROJECT_ROOT#"$HOME"/}" | cut -d/ -f1)"
+      echo
+      echo "    !! --dev with the checkout in ~/$protected_dir, which macOS protects."
+      echo "       Browsers cannot launch the backend from there. Either move the"
+      echo "       checkout somewhere unprotected (e.g. ~/Developer), or drop --dev"
+      echo "       so the runtime is installed to Application Support instead."
+      echo
+      ;;
+  esac
+fi
 
 # --- 1. Python environment -------------------------------------------------
 PYTHON=""
@@ -53,6 +75,8 @@ if [ -z "$PYTHON" ]; then
   exit 1
 fi
 
+mkdir -p "$HOST_DIR"
+
 if [ ! -x "$VENV/bin/python" ]; then
   echo "==> Creating virtual environment ($($PYTHON --version))"
   "$PYTHON" -m venv "$VENV"
@@ -62,7 +86,33 @@ fi
 
 echo "==> Installing dependencies (this can take several minutes the first time)"
 "$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install --quiet -e "$PROJECT_ROOT"
+
+# PyTorch is a large download and a dropped connection mid-install otherwise
+# ends the script with a stack trace and a half-built environment. Retry a few
+# times; already-downloaded packages are cached, so retries pick up where the
+# last attempt got to.
+pip_install_with_retries() {
+  local attempt
+  for attempt in 1 2 3; do
+    if "$VENV/bin/pip" install --quiet --timeout 60 --retries 5 "$@"; then
+      return 0
+    fi
+    echo "    download interrupted; retrying ($attempt/3)…"
+    sleep 3
+  done
+  echo "ERROR: could not install dependencies. Re-run this script to resume." >&2
+  return 1
+}
+
+if [ "$DEV_MODE" = "1" ]; then
+  # Editable, so edits to the checkout take effect immediately.
+  pip_install_with_retries -e "$PROJECT_ROOT"
+else
+  # A real copy, so the runtime doesn't depend on the checkout still being
+  # there (or being readable by the browser).
+  pip_install_with_retries "$PROJECT_ROOT"
+  cp "$PROJECT_ROOT/native-host/streamerisolate_host.py" "$HOST_DIR/"
+fi
 
 # --- 2. Models -------------------------------------------------------------
 # The classifier's package downloads its checkpoint with wget, which macOS
@@ -95,12 +145,12 @@ if [ ! -f "$PANNS_CKPT" ] || [ "$(stat -f%z "$PANNS_CKPT")" -lt 300000000 ]; the
 fi
 
 # --- 3. Native messaging host ---------------------------------------------
-LAUNCHER="$PROJECT_ROOT/native-host/run-host.sh"
+LAUNCHER="$HOST_DIR/run-host.sh"
 cat > "$LAUNCHER" <<LAUNCHER_EOF
 #!/bin/sh
 # Generated by scripts/install.sh -- absolute paths are required here because
 # browsers launch this directly, with no shell environment to speak of.
-exec "$VENV/bin/python" "$PROJECT_ROOT/native-host/streamerisolate_host.py"
+exec "$VENV/bin/python" "$HOST_DIR/streamerisolate_host.py"
 LAUNCHER_EOF
 chmod +x "$LAUNCHER"
 

@@ -138,3 +138,22 @@ closes as soon as the message is answered.
 Chrome ties native-host permission to the extension ID, which it assigns when
 you load an unpacked extension, so the installer takes that ID as an argument.
 Firefox declares a fixed ID in its manifest, so it needs no such step.
+
+### Why the runtime installs outside the checkout
+
+macOS restricts app access to Documents, Desktop and Downloads. That doesn't
+matter while a human starts the backend from a terminal — their shell has
+access — but it does the moment the *browser* has to launch it, because
+browsers get no such grant and child processes inherit the browser's.
+
+This surfaced as the extension reporting it couldn't reach the launcher, with
+everything registered correctly and the host working fine from a shell. The
+tell is `/tmp/streamerisolate-host.log`: the host appends to it the instant it
+starts, from a location nothing restricts. If clicking the extension leaves
+that file untouched, the browser never executed the host at all.
+
+So `install.sh` installs the runtime into
+`~/Library/Application Support/StreamerIsolate` (venv, host script, launcher,
+logs) and points the native messaging manifests there. The checkout can then
+live anywhere — including Downloads, which is where a downloaded repo usually
+lands. `--dev` keeps the old editable-from-checkout behaviour for iteration.

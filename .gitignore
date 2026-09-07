@@ -16,3 +16,5 @@ native/bin/
 native-host/run-host.sh
 backend.log
 .backend.pid
+native-host/backend.log
+native-host/.backend.pid

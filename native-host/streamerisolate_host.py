@@ -27,13 +27,37 @@ from pathlib import Path
 
 HOST = "127.0.0.1"
 PORT = 8765
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-BACKEND = PROJECT_ROOT / ".venv" / "bin" / "streamerisolate"
-LOG_PATH = PROJECT_ROOT / "backend.log"
+
+HERE = Path(__file__).resolve().parent
+
+
+def _find_backend() -> Path:
+    """Locate the backend in either supported layout.
+
+    Installed (the default, and the one browsers can always reach):
+        ~/Library/Application Support/StreamerIsolate/
+            venv/, streamerisolate_host.py
+    Dev checkout (install.sh --dev), where this lives in <repo>/native-host/:
+        <repo>/.venv/
+    """
+    candidates = [
+        HERE / "venv" / "bin" / "streamerisolate",
+        HERE.parent / ".venv" / "bin" / "streamerisolate",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+BACKEND = _find_backend()
+PROJECT_ROOT = BACKEND.parent.parent.parent
+# Kept beside this script so both layouts have one predictable writable spot.
+LOG_PATH = HERE / "backend.log"
 # Records the backend we launched. This host process is short-lived -- the
 # browser starts it per message and closes it on reply -- so "am I already
 # starting one?" has to live on disk, not in memory.
-PID_PATH = PROJECT_ROOT / ".backend.pid"
+PID_PATH = HERE / ".backend.pid"
 
 
 def pid_alive(pid: int) -> bool:

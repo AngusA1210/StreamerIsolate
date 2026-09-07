@@ -21,6 +21,13 @@ PyTorch (`brew install python@3.12`).
 After this you never need a terminal: clicking the extension starts
 everything.
 
+The runtime is installed to `~/Library/Application Support/StreamerIsolate`,
+not run from this folder, so it works wherever you downloaded the repo.
+(macOS blocks apps from Documents, Desktop and Downloads, and the browser has
+to launch the backend itself — running from there would silently fail.) Pass
+`--dev` to run editable from the checkout instead, if the checkout is
+somewhere unprotected.
+
 ## Chrome
 
 1. Go to `chrome://extensions`, turn on **Developer mode**, click **Load
