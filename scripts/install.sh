@@ -5,12 +5,12 @@
 # host so the browser extension can start everything itself. After this, using
 # StreamerIsolate never involves a terminal.
 #
-#   ./scripts/install.sh                       # Firefox (+ Chrome if ID given)
-#   ./scripts/install.sh <chrome-extension-id>
-#   ./scripts/install.sh --dev [<chrome-id>]   # run from the checkout instead
+#   ./scripts/install.sh         # Chrome, Chromium and Firefox
+#   ./scripts/install.sh --dev   # run from the checkout instead
 #
-# The Chrome extension ID is shown on chrome://extensions with Developer mode
-# on. Firefox needs no ID -- the extension declares a fixed one.
+# Both extensions have fixed IDs: Firefox declares one, and Chrome's is pinned
+# by the "key" in extension-chrome/manifest.json (without it, Chrome derives
+# the ID from the folder path, so it changes whenever the checkout moves).
 #
 # By default the runtime is installed to ~/Library/Application Support, NOT run
 # from this checkout. That's deliberate: macOS restricts app access to
@@ -36,7 +36,12 @@ if [ "${1:-}" = "--dev" ]; then
   DEV_MODE=1
   shift
 fi
-CHROME_EXT_ID="${1:-}"
+if [ $# -gt 0 ]; then
+  echo "Unexpected argument: $1" >&2
+  echo "Usage: ./scripts/install.sh [--dev]" >&2
+  echo "(A Chrome extension ID is no longer needed; it's pinned in the manifest.)" >&2
+  exit 1
+fi
 
 if [ "$DEV_MODE" = "1" ]; then
   VENV="$PROJECT_ROOT/.venv"
@@ -173,18 +178,25 @@ echo "==> Registering native messaging host"
 write_manifest "$HOME/Library/Application Support/Mozilla/NativeMessagingHosts" \
   "Firefox" "allowed_extensions" "\"$FIREFOX_EXT_ID\""
 
-if [ -n "$CHROME_EXT_ID" ]; then
-  # Both Chrome and Chromium may be installed; label them distinctly so the
-  # output doesn't just say "Chrome" twice.
-  chrome_base="$HOME/Library/Application Support/Google/Chrome"
-  chromium_base="$HOME/Library/Application Support/Chromium"
-  [ -d "$chrome_base" ] && write_manifest "$chrome_base/NativeMessagingHosts" "Chrome" \
-    "allowed_origins" "\"chrome-extension://$CHROME_EXT_ID/\""
-  [ -d "$chromium_base" ] && write_manifest "$chromium_base/NativeMessagingHosts" "Chromium" \
-    "allowed_origins" "\"chrome-extension://$CHROME_EXT_ID/\""
-else
-  echo "    skipped Chrome (no extension ID given)"
-fi
+# Chrome's extension ID is the SHA-256 of the manifest's public key, first 32
+# hex digits mapped 0-f -> a-p. Derived here so it can't drift from the key.
+CHROME_EXT_ID="$("$PYTHON" - "$PROJECT_ROOT/extension-chrome/manifest.json" <<'PY_EOF'
+import base64, hashlib, json, sys
+key = base64.b64decode(json.load(open(sys.argv[1]))["key"])
+print("".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(key).hexdigest()[:32]))
+PY_EOF
+)"
+chrome_found=0
+# Label Chrome and Chromium distinctly so the output doesn't say "Chrome" twice.
+for entry in "Google/Chrome:Chrome" "Chromium:Chromium"; do
+  base="$HOME/Library/Application Support/${entry%%:*}"
+  if [ -d "$base" ]; then
+    write_manifest "$base/NativeMessagingHosts" "${entry##*:}" \
+      "allowed_origins" "\"chrome-extension://$CHROME_EXT_ID/\""
+    chrome_found=1
+  fi
+done
+[ "$chrome_found" = "1" ] || echo "    skipped Chrome (not installed)"
 
 echo
 echo "==> Done."
@@ -194,10 +206,5 @@ echo "  Firefox:  about:debugging#/runtime/this-firefox -> Load Temporary Add-on
 echo "            -> pick extension-firefox/manifest.json"
 echo "  Chrome:   chrome://extensions -> Developer mode -> Load unpacked"
 echo "            -> pick extension-chrome/"
-if [ -z "$CHROME_EXT_ID" ]; then
-  echo
-  echo "  For Chrome, re-run with the extension ID shown on chrome://extensions:"
-  echo "      ./scripts/install.sh <chrome-extension-id>"
-fi
 echo
 echo "Then just click the extension icon -- it starts the backend for you."

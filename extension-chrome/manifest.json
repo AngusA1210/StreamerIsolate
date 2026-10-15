@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "StreamerIsolate",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Removes background music from a livestream tab's audio via a local Demucs backend, keeping only speech.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo3mlPinM/mDdW6p84AFYj+JcyRCZ6E+6DpG8AVu75+0UHGXnMsTytkk0YjJ8KS+w8U0kU8LrsVQAht5X9HTiJDlVBe9mlBU6KMd0ouK+eb9ERdEXtPlbv/orj4EnlZfNQXmuANqKCdpzSWMkJpv7eh1LCyC/fWjYCPakca7dmGuw8AR9tfIhDKy/qmLCyBu2iOjFRoyu+xZA3oQjwWcTjuP2SAqWIDS0siFFBAea+bl7nX4wekpYOlrRq9iAqsXcrbctvDin4D/OiOUOYEhK82wLzhdNkJyjFThW2xi25MkMgyxjVvO/i3S6x3NqfoDsHinCNHKXg/1TV3duN/ecgwIDAQAB",
   "permissions": [
     "tabCapture",
     "offscreen",

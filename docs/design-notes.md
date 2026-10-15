@@ -135,9 +135,15 @@ The extension's existing reconnect loop covers the wait, and the popup shows
 detached (`start_new_session=True`) so it outlives the host, which the browser
 closes as soon as the message is answered.
 
-Chrome ties native-host permission to the extension ID, which it assigns when
-you load an unpacked extension, so the installer takes that ID as an argument.
-Firefox declares a fixed ID in its manifest, so it needs no such step.
+Both browsers tie native-host permission to the extension's ID. Firefox's is
+declared in its manifest. Chrome derives an unpacked extension's ID from the
+folder path by default, so it changed whenever the checkout moved, and users
+had to copy it from `chrome://extensions` into the installer. The Chrome
+manifest now carries a public `key` instead, which fixes the ID
+(`lflehoahcdkkdmmdialglikkmoogjdnj`): the first 32 hex digits of the key's
+SHA-256, mapped 0–f to a–p. The installer computes it from the manifest, so
+the two can't disagree. The matching private key was discarded; loading an
+unpacked extension never needs it, and a Web Store listing would get its own.
 
 ### Why the runtime installs outside the checkout
 

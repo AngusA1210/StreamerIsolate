@@ -51,19 +51,16 @@ flowchart TD
 Needs Homebrew Python 3.10 or newer (`brew install python@3.12`); macOS's
 built-in 3.9 is too old for PyTorch.
 
-**Chrome:** go to `chrome://extensions`, turn on **Developer mode**, click
-**Load unpacked**, and pick `extension-chrome/`. Copy the ID it shows, then
-run:
-
 ```bash
-./scripts/install.sh <chrome-extension-id>
+./scripts/install.sh
 ```
 
-**Firefox only:** run `./scripts/install.sh` with no ID.
+This sets up the Python environment, downloads the models (~400MB), and
+registers a native messaging host for Chrome and Firefox so the extension can
+start the backend itself. After that, clicking the extension is all it takes.
 
-The installer sets up the Python environment, downloads the models (~400MB),
-and registers a native messaging host so the extension can start the backend
-itself. After that, clicking the extension is all it takes.
+**Chrome:** go to `chrome://extensions`, turn on **Developer mode**, click
+**Load unpacked**, and pick `extension-chrome/`.
 
 ## Use
 
@@ -109,8 +106,7 @@ separated vocals through untouched.
 - **Backend won't start:** check
   `~/Library/Application Support/StreamerIsolate/backend.log`. If
   `/tmp/streamerisolate-host.log` doesn't appear when you click Start, the
-  browser never ran the launcher. Re-run `./scripts/install.sh` (with the
-  Chrome ID).
+  browser never ran the launcher. Re-run `./scripts/install.sh`.
 - **Slider has no effect:** stop the backend
   (`pkill -f "streamerisolate serve"`) and start it yourself with debug
   output. The extension uses one that's already running:
