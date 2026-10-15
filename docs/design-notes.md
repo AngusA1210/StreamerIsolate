@@ -70,6 +70,13 @@ the audio feeding Demucs. Instead `content.js` buffers the video's frames and
 draws a deliberately-delayed copy on a canvas over the real video, which
 keeps playing undisturbed underneath.
 
+The canvas is inserted right after the `<video>` element, inside the player,
+not pinned to the page at the top z-index. An earlier version did the
+latter, and it covered the player's control bar (volume, pause) along with
+the video. Sitting next to the video keeps it in the video's layer, so the
+player's own controls and overlays still draw on top, and it stays visible
+in fullscreen, which only shows the fullscreen element's own contents.
+
 Frames are buffered **encoded** (WebCodecs: `VideoEncoder` → chunk queue →
 `VideoDecoder`). A few seconds of raw 1080p frames would be hundreds of
 megabytes to gigabytes; the same span of H.264 is single-digit megabytes,

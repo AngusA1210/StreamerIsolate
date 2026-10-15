@@ -60,16 +60,39 @@
     return document.querySelector("video");
   }
 
+  // The canvas sits right after the <video> inside the player, so the
+  // player's own controls and overlays still draw on top of it, and it stays
+  // visible when the player goes fullscreen.
+  let canvasLeft = 0;
+  let canvasTop = 0;
+
   function positionCanvas() {
     if (!video || !canvas) return;
-    const rect = video.getBoundingClientRect();
-    canvas.style.left = `${rect.left}px`;
-    canvas.style.top = `${rect.top}px`;
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
-    canvas.style.display = rect.width > 0 && rect.height > 0 ? "block" : "none";
+    const target = video.getBoundingClientRect();
+    if (!target.width || !target.height) {
+      canvas.style.display = "none";
+      return;
+    }
+    canvas.style.display = "block";
+    canvas.style.width = `${target.width}px`;
+    canvas.style.height = `${target.height}px`;
+    // Correct by the measured offset rather than computing it, so this holds
+    // whatever the canvas's containing block turns out to be.
+    const current = canvas.getBoundingClientRect();
+    canvasLeft += target.left - current.left;
+    canvasTop += target.top - current.top;
+    canvas.style.left = `${canvasLeft}px`;
+    canvas.style.top = `${canvasTop}px`;
     // Canvas *resolution* is set from decoded frames (see paint),
     // not from this CSS box -- object-fit letterboxes it like the video does.
+  }
+
+  function stackingZIndex(element) {
+    // Matching the video's z-index keeps the canvas in the video's layer, and
+    // being later in the DOM puts it just above. Only meaningful when the
+    // video is positioned; otherwise "auto" already lands above it.
+    const style = getComputedStyle(element);
+    return style.position !== "static" && style.zIndex !== "auto" ? style.zIndex : "auto";
   }
 
   async function pickEncoderConfig(width, height, framerate) {
@@ -294,11 +317,18 @@
     if (delaySeconds) targetDelayMs = delaySeconds * 1000;
 
     canvas = document.createElement("canvas");
-    canvas.style.position = "fixed";
-    canvas.style.zIndex = "2147483647";
+    canvas.style.position = "absolute";
+    canvas.style.margin = "0";
+    canvas.style.zIndex = stackingZIndex(video);
     canvas.style.pointerEvents = "none";
     canvas.style.objectFit = "contain";
-    document.documentElement.appendChild(canvas);
+    // Explicit 0s, not "auto": positionCanvas corrects relative to these, and
+    // "auto" would leave the canvas at its in-flow spot below the video.
+    canvasLeft = 0;
+    canvasTop = 0;
+    canvas.style.left = "0px";
+    canvas.style.top = "0px";
+    video.after(canvas);
     ctx = canvas.getContext("2d");
 
     positionCanvas();
