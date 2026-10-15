@@ -4,8 +4,8 @@ The extension uses chrome.tabCapture to truly intercept a tab's audio (muting
 the tab and taking over what reaches the speakers), streams raw PCM here over
 a websocket, gets back isolated-speech PCM, and plays that through its own
 AudioContext. This is what makes "replace the tab's audio" actually work,
-unlike the ScreenCaptureKit tap explored earlier (see project notes) which
-could only add a copy on top of -- not replace -- the original.
+unlike the ScreenCaptureKit tap explored earlier (see docs/design-notes.md)
+which could only add a copy on top of -- not replace -- the original.
 
 Protocol (ws://127.0.0.1:8765 by default):
   client -> server: one JSON text message first:

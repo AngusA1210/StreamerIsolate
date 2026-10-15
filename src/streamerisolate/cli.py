@@ -20,12 +20,8 @@ def main() -> None:
     sub.add_parser("list-devices", help="List available audio input/output devices")
 
     run = sub.add_parser("run", help="Start the capture -> isolate -> playback pipeline")
-    input_group = run.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--input", help="Input device index or name substring (virtual audio device)")
-    input_group.add_argument(
-        "--capture-app",
-        help="Capture a single running app's audio directly (e.g. \"Chrome\"), no virtual device or "
-        "system output change needed. macOS only.",
+    run.add_argument(
+        "--input", required=True, help="Input device index or name substring (virtual audio device)"
     )
     run.add_argument("--output", required=True, help="Output device index or name substring")
     run.add_argument("--model", default="htdemucs", help="Demucs model name (default: htdemucs)")
@@ -88,29 +84,16 @@ def main() -> None:
             vocal_classifier = VocalClassifier()
             print("Vocal classifier loaded.")
 
-        if args.capture_app:
-            pipeline = Pipeline(
-                output_device=output_device,
-                isolator=isolator,
-                capture_app=args.capture_app,
-                chunk_seconds=args.chunk_seconds,
-                overlap_seconds=args.overlap_seconds,
-                gain=args.gain,
-                vocal_classifier=vocal_classifier,
-                vocal_strength=args.vocal_strength,
-            )
-        else:
-            input_device = audio_io.resolve_device(args.input)
-            pipeline = Pipeline(
-                output_device=output_device,
-                isolator=isolator,
-                input_device=input_device,
-                chunk_seconds=args.chunk_seconds,
-                overlap_seconds=args.overlap_seconds,
-                gain=args.gain,
-                vocal_classifier=vocal_classifier,
-                vocal_strength=args.vocal_strength,
-            )
+        pipeline = Pipeline(
+            output_device=output_device,
+            isolator=isolator,
+            input_device=audio_io.resolve_device(args.input),
+            chunk_seconds=args.chunk_seconds,
+            overlap_seconds=args.overlap_seconds,
+            gain=args.gain,
+            vocal_classifier=vocal_classifier,
+            vocal_strength=args.vocal_strength,
+        )
 
         print(
             f"Starting pipeline (chunk={args.chunk_seconds}s, overlap={args.overlap_seconds}s). "

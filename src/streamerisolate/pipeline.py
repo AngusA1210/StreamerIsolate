@@ -16,7 +16,6 @@ import numpy as np
 import sounddevice as sd
 import torch
 
-from .app_capture import AppAudioCapture
 from .separator import SpeechIsolator
 from .vocal_classifier import ClassifierState, VocalClassifier
 
@@ -26,8 +25,7 @@ class Pipeline:
         self,
         output_device: int,
         isolator: SpeechIsolator,
-        input_device: int | None = None,
-        capture_app: str | None = None,
+        input_device: int,
         chunk_seconds: float = 3.0,
         overlap_seconds: float = 0.75,
         gain: float = 1.0,
@@ -37,11 +35,8 @@ class Pipeline:
     ):
         if overlap_seconds >= chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
-        if (input_device is None) == (capture_app is None):
-            raise ValueError("exactly one of input_device or capture_app must be given")
 
         self.input_device = input_device
-        self.capture_app = capture_app
         self.output_device = output_device
         self.isolator = isolator
         self.vocal_classifier = vocal_classifier
@@ -63,8 +58,8 @@ class Pipeline:
         self._playback_tail = np.zeros((0, self.channels), dtype=np.float32)
         self._prev_tail: np.ndarray | None = None
 
-        # Progress/health, for callers that want to show status (the GUI polls
-        # these): chunks_emitted stays 0 until the first chunk is buffered and
+        # Progress/health, for callers that want to show status (the server
+        # pushes these to the Firefox popup): chunks_emitted stays 0 until the first chunk is buffered and
         # processed, i.e. while the user is still waiting for audio.
         self.chunks_emitted = 0
         self.error: str | None = None
@@ -74,18 +69,14 @@ class Pipeline:
         self._worker: threading.Thread | None = None
         self._instream: sd.InputStream | None = None
         self._outstream: sd.OutputStream | None = None
-        self._app_capture: AppAudioCapture | None = None
 
     # --- capture ---
-
-    def _feed_input(self, samples: np.ndarray) -> None:
-        with self._input_lock:
-            self._input_buffer = np.concatenate([self._input_buffer, samples], axis=0)
 
     def _input_callback(self, indata, frames, time_info, status):
         if status:
             print(f"[input] {status}")
-        self._feed_input(indata.copy())
+        with self._input_lock:
+            self._input_buffer = np.concatenate([self._input_buffer, indata.copy()], axis=0)
 
     # --- playback ---
 
@@ -117,7 +108,7 @@ class Pipeline:
             except Exception as e:  # noqa: BLE001
                 # Without this the worker thread would die silently and the
                 # pipeline would just go quiet with no explanation. Record it
-                # so a caller (e.g. the GUI) can surface it.
+                # so a caller can surface it.
                 self.error = f"{type(e).__name__}: {e}"
                 print(f"[pipeline] processing stopped: {self.error}")
                 return
@@ -178,21 +169,15 @@ class Pipeline:
         self._worker = threading.Thread(target=self._process_loop, daemon=True)
         self._worker.start()
 
-        if self.capture_app is not None:
-            self._app_capture = AppAudioCapture(
-                app_name=self.capture_app, samplerate=self.samplerate, channels=self.channels
-            )
-            self._app_capture.start(self._feed_input)
-        else:
-            self._instream = sd.InputStream(
-                device=self.input_device,
-                channels=self.channels,
-                samplerate=self.samplerate,
-                blocksize=self.block_size,
-                dtype="float32",
-                callback=self._input_callback,
-            )
-            self._instream.start()
+        self._instream = sd.InputStream(
+            device=self.input_device,
+            channels=self.channels,
+            samplerate=self.samplerate,
+            blocksize=self.block_size,
+            dtype="float32",
+            callback=self._input_callback,
+        )
+        self._instream.start()
 
         self._outstream = sd.OutputStream(
             device=self.output_device,
@@ -208,8 +193,6 @@ class Pipeline:
         self._stop.set()
         if self._worker:
             self._worker.join(timeout=2)
-        if self._app_capture is not None:
-            self._app_capture.stop()
         for stream in (self._instream, self._outstream):
             if stream is not None:
                 stream.stop()

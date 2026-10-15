@@ -126,17 +126,3 @@ def test_pipeline_hop_arithmetic():
     assert pipeline.chunk_samples == int(3.0 * 44100)
     assert pipeline.overlap_samples == int(0.75 * 44100)
     assert pipeline.hop_samples == pipeline.chunk_samples - pipeline.overlap_samples
-
-
-def test_pipeline_requires_exactly_one_input_source():
-    from streamerisolate.pipeline import Pipeline
-
-    with pytest.raises(ValueError):
-        Pipeline(output_device=0, isolator=FakeIsolator())  # neither
-    with pytest.raises(ValueError):
-        Pipeline(  # both
-            output_device=0,
-            isolator=FakeIsolator(),
-            input_device=0,
-            capture_app="Chrome",
-        )

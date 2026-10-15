@@ -46,8 +46,8 @@ slowly varying.
 
 The first approach used macOS
 [ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)
-(still in `native/capture-app-audio/`) to capture one app's audio without
-touching system output. That's a dead end here: ScreenCaptureKit gives you a
+to capture one app's audio without touching system output (since removed;
+it's in the git history before v1.0). That's a dead end here: ScreenCaptureKit gives you a
 *copy* of audio already on its way to the speakers. It can't silence the
 original, so you always hear the untouched original layered over the
 processed result. Muting the tab doesn't help either — browsers stop
@@ -104,7 +104,7 @@ delay rebuilds over a few seconds rather than replaying a stale backlog.
 | `src/streamerisolate/server.py` | Local websocket: audio streaming (Chrome) and pipeline control (Firefox) |
 | `extension-chrome/` | Chrome extension (tabCapture audio + video overlay) |
 | `extension-firefox/` | Firefox extension (backend control + video overlay) |
-| `native/capture-app-audio/` | ScreenCaptureKit experiment, superseded |
+| `native-host/` | Native messaging host that starts the backend on demand |
 
 `extension-firefox/content.js` is a copy of the Chrome one — the logic is
 browser-agnostic. Keep them in sync.

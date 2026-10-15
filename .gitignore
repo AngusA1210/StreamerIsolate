@@ -3,9 +3,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 
-# compiled native helper -- build from native/capture-app-audio/main.swift instead
-native/bin/
-
 # Claude Code harness state
 .claude/
 
