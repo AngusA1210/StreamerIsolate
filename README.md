@@ -21,7 +21,10 @@ extensions (Manifest V3) · macOS
 
 ## What it does
 
-![Spectrograms of the input mix, the output, and the clean speech](docs/images/demo-spectrogram.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-spectrogram-dark.png">
+  <img src="docs/images/demo-spectrogram.png" alt="Spectrograms of the input mix, the output, and the clean speech">
+</picture>
 
 Speech generated with macOS `say` and mixed over synthesized music, then fed
 through the same code path the extensions use. Between phrases the music
@@ -32,15 +35,15 @@ are harder, especially songs with vocals (see [Limitations](#limitations)).
 `build/demo/` so you can listen.
 
 ```mermaid
-flowchart LR
-  tab["Stream tab"] -->|"audio (tabCapture)"| ext["Extension"]
-  ext -->|"PCM over localhost websocket"| backend
-  subgraph backend["Local backend"]
-    demucs["Demucs: keep vocals stem"] --> panns["PANNs: duck singing"]
+flowchart TD
+  tab["Stream tab"] -->|audio| ext["Extension"]
+  tab -->|video frames| overlay["Video overlay, delayed to match"]
+  ext <-->|"PCM over a localhost websocket"| backend
+  subgraph backend["Local Python backend"]
+    direction LR
+    demucs["Demucs: keep the vocals"] --> panns["PANNs: turn down singing"]
   end
-  backend -->|"speech only"| ext
-  ext --> speakers["Speakers"]
-  tab -->|"video frames"| overlay["Delayed video overlay"]
+  ext -->|speech only| speakers["Speakers"]
 ```
 
 ## Install (once, macOS)

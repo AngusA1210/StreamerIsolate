@@ -98,6 +98,42 @@ def rms(x: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(x)) + 1e-12))
 
 
+def plot(panels: list[tuple[str, np.ndarray]], path: Path, dark: bool) -> None:
+    import io
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from PIL import Image
+
+    # Matches GitHub's dark theme background so the figure sits flush on it.
+    style = {"figure.facecolor": "#0d1117", "axes.facecolor": "#0d1117"} if dark else {}
+    with plt.style.context(["dark_background"] if dark else ["default"]), plt.rc_context(style):
+        fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True, constrained_layout=True)
+        for ax, (title, signal) in zip(axes, panels):
+            f, t, sxx = spectrogram(signal, fs=RATE, nperseg=2048, noverlap=1536)
+            keep = f <= 8000
+            ax.pcolormesh(
+                t, f[keep] / 1000, 10 * np.log10(sxx[keep] + 1e-10),
+                vmin=-110, vmax=-40, cmap="magma", shading="auto", rasterized=True,
+            )
+            ax.set_title(title, loc="left", fontsize=11)
+            ax.set_ylabel("kHz")
+        axes[-1].set_xlabel("seconds")
+        fig.suptitle(
+            "Synthetic test: macOS `say` speech over synthesized music, "
+            "through the same code path the extensions use",
+            fontsize=11,
+        )
+        buf = io.BytesIO()
+        fig.savefig(buf, dpi=110, format="png")
+        plt.close(fig)
+    # Spectrogram noise defeats PNG compression; a 256-colour palette is
+    # visually identical here and a fraction of the size.
+    Image.open(buf).convert("RGB").quantize(256).save(path, optimize=True)
+
+
 def main() -> None:
     from streamerisolate.separator import SpeechIsolator
     from streamerisolate.server import StreamSession
@@ -142,43 +178,15 @@ def main() -> None:
     sf.write(AUDIO_DIR / "output.wav", out[:n], RATE)
     sf.write(AUDIO_DIR / "speech-reference.wav", speech_track[:n], RATE)
 
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     panels = [
         ("Input: speech over music", mix_m),
         ("Output: what you hear", out_m),
         ("Clean speech (reference, never shown to the model)", ref_m),
     ]
-    fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True, constrained_layout=True)
-    for ax, (title, signal) in zip(axes, panels):
-        f, t, sxx = spectrogram(signal, fs=RATE, nperseg=2048, noverlap=1536)
-        keep = f <= 8000
-        ax.pcolormesh(
-            t, f[keep] / 1000, 10 * np.log10(sxx[keep] + 1e-10),
-            vmin=-110, vmax=-40, cmap="magma", shading="auto", rasterized=True,
-        )
-        ax.set_title(title, loc="left", fontsize=11)
-        ax.set_ylabel("kHz")
-    axes[-1].set_xlabel("seconds")
-    fig.suptitle(
-        "Synthetic test: macOS `say` speech over synthesized music, "
-        "through the same code path the extensions use",
-        fontsize=11,
-    )
     FIGURE.parent.mkdir(parents=True, exist_ok=True)
-    import io
-
-    from PIL import Image
-
-    buf = io.BytesIO()
-    fig.savefig(buf, dpi=110, format="png")
-    # Spectrogram noise defeats PNG compression; a 256-colour palette is
-    # visually identical here and a fraction of the size.
-    Image.open(buf).convert("RGB").quantize(256).save(FIGURE, optimize=True)
-    print(f"wrote {FIGURE.relative_to(ROOT)} and {AUDIO_DIR.relative_to(ROOT)}/", file=sys.stderr)
+    plot(panels, FIGURE, dark=False)
+    plot(panels, FIGURE.with_name(FIGURE.stem + "-dark.png"), dark=True)
+    print(f"wrote {FIGURE.parent.relative_to(ROOT)}/ and {AUDIO_DIR.relative_to(ROOT)}/", file=sys.stderr)
 
 
 if __name__ == "__main__":
