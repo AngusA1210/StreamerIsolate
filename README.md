@@ -1,102 +1,138 @@
 # StreamerIsolate
 
-Removes background music from a livestream's audio in near-real-time, keeping
-only the streamer's speech — so you can play your own music without the two
-fighting.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/popup-dark.png">
+  <img src="docs/images/popup-light.png" alt="The extension popup: running on this tab, with a vocal attenuation slider at 100%" width="288" align="right">
+</picture>
 
-Works with **Chrome** (extension only) or **Firefox** (extension + a virtual
-audio device).
+Removes the background music from a livestream in near-real-time and keeps
+the streamer's voice, so you can play your own music without the two
+competing.
 
-## Install (once)
+It runs as a Chrome or Firefox extension backed by a local Python process.
+The audio goes through a source-separation model (Demucs). A second model
+(PANNs) then turns down whatever sounds like singing rather than talking. The
+video is delayed by the same few seconds so lips stay in sync.
 
-```bash
-./scripts/install.sh
+Python · PyTorch · Demucs · PANNs · WebSockets · WebCodecs · Chrome/Firefox
+extensions (Manifest V3) · macOS
+
+<br clear="right">
+
+## What it does
+
+![Spectrograms of the input mix, the output, and the clean speech](docs/images/demo-spectrogram.png)
+
+Speech generated with macOS `say` and mixed over synthesized music, then fed
+through the same code path the extensions use. Between phrases the music
+drops by about 66 dB, and during speech the output matches the clean voice
+almost exactly (correlation 0.997). This is the easy case: real streams
+are harder, especially songs with vocals (see [Limitations](#limitations)).
+`python scripts/make_demo.py` regenerates it and writes the audio to
+`build/demo/` so you can listen.
+
+```mermaid
+flowchart LR
+  tab["Stream tab"] -->|"audio (tabCapture)"| ext["Extension"]
+  ext -->|"PCM over localhost websocket"| backend
+  subgraph backend["Local backend"]
+    demucs["Demucs: keep vocals stem"] --> panns["PANNs: duck singing"]
+  end
+  backend -->|"speech only"| ext
+  ext --> speakers["Speakers"]
+  tab -->|"video frames"| overlay["Delayed video overlay"]
 ```
 
-That sets up Python, downloads the models (~400MB), and registers a native
-messaging host so the extension can start the backend by itself. Needs
-Homebrew's `python@3.12` — macOS's built-in Python 3.9 is too old for current
-PyTorch (`brew install python@3.12`).
+## Install (once, macOS)
 
-After this you never need a terminal: clicking the extension starts
-everything.
+Needs Homebrew Python 3.10 or newer (`brew install python@3.12`); macOS's
+built-in 3.9 is too old for PyTorch.
 
-The runtime is installed to `~/Library/Application Support/StreamerIsolate`,
-not run from this folder, so it works wherever you downloaded the repo.
-(macOS blocks apps from Documents, Desktop and Downloads, and the browser has
-to launch the backend itself — running from there would silently fail.) Pass
-`--dev` to run editable from the checkout instead, if the checkout is
-somewhere unprotected.
+**Chrome:** go to `chrome://extensions`, turn on **Developer mode**, click
+**Load unpacked**, and pick `extension-chrome/`. Copy the ID it shows, then
+run:
 
-## Chrome
+```bash
+./scripts/install.sh <chrome-extension-id>
+```
 
-1. Go to `chrome://extensions`, turn on **Developer mode**, click **Load
-   unpacked**, pick the `extension-chrome/` folder.
-2. Copy the extension ID it shows, and run `./scripts/install.sh <that-id>`
-   so the extension is allowed to start the backend. (Chrome ties this
-   permission to the ID, which it assigns on load; Firefox needs no such
-   step.)
-3. Open your stream, click the StreamerIsolate icon, hit **Start**.
+**Firefox only:** run `./scripts/install.sh` with no ID.
 
-No audio setup needed.
+The installer sets up the Python environment, downloads the models (~400MB),
+and registers a native messaging host so the extension can start the backend
+itself. After that, clicking the extension is all it takes.
 
-## Firefox
+## Use
 
-Firefox can't hand a tab's audio to an extension ([Mozilla bug
-1443484](https://bugzilla.mozilla.org/show_bug.cgi?id=1443484)), so the
-backend handles audio through a virtual audio device instead.
+**Chrome:** open a stream, click the StreamerIsolate icon, hit **Start on
+this tab**. No audio setup.
 
-1. Install a virtual audio device — [BlackHole](https://github.com/ExistentialAudio/BlackHole)
-   (`brew install blackhole-2ch`), or use Pro Tools Audio Bridge if you have
-   Pro Tools.
-2. Set that virtual device as your **system output** while the stream plays.
-3. Go to `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on**
-   → pick `extension-firefox/manifest.json`.
-4. In the popup, set **Capture from** to the virtual device and **Play to**
-   to your speakers, then hit **Start**.
+**Firefox** can't hand a tab's audio to an extension ([Mozilla bug
+1443484](https://bugzilla.mozilla.org/show_bug.cgi?id=1443484)), so audio
+goes through a virtual device instead:
 
-## Good to know
+1. Install [BlackHole](https://github.com/ExistentialAudio/BlackHole)
+   (`brew install blackhole-2ch`) or another virtual audio device.
+2. Load the extension: `about:debugging#/runtime/this-firefox` → **Load
+   Temporary Add-on** → `extension-firefox/manifest.json`.
+3. Set the virtual device as your system output while the stream plays.
+4. In the popup, set **Capture the stream's audio from** to the virtual
+   device and **Play the cleaned audio to** to your speakers, then hit
+   **Start**.
 
-- **Starting takes a few seconds.** The first click starts the backend, which
-  loads models (~20s); after that it stays running and starts are quick.
-  Either way it buffers a few seconds before audio comes out — the popup says
-  so until it's ready.
-- **The slider** controls how hard detected singing is cut, live. Song vocals
-  can still bleed through when the streamer talks *over* music — both land in
-  the same audio and no setting fully separates them.
-- **Video is delayed to match the audio** so they stay in sync.
-- **After changing backend code**, restart `streamerisolate serve` — Python
-  doesn't hot-reload. For the extensions, hit reload in the browser.
-- **Nothing playing?** Check that `streamerisolate serve` is running on port
-  8765. In Chrome, `chrome://extensions` → StreamerIsolate → "Inspect views:
-  offscreen.html" shows errors. In Firefox, `about:debugging` → Inspect.
-- **Attenuation not doing anything?** Run the backend as
-  `STREAMERISOLATE_DEBUG=1 streamerisolate serve` — it prints one line per
-  chunk showing the strength in effect, what the classifier heard, and the
-  gain it applied, which distinguishes "the slider isn't reaching it" from
-  "it doesn't think there's singing".
+The first start takes about 20s while models load; after that the backend
+stays up. Either way it buffers a few seconds before audio comes out.
 
-## Status
+**The slider** sets how hard detected singing is cut, live. 0% passes the
+separated vocals through untouched.
 
-Working: Chrome extension, Firefox extension, video sync, adjustable singing
-attenuation, and one-click start with no terminal.
+## Limitations
 
-Not done: running fully in-browser with no install at all (Demucs would
-have to be ported to ONNX/WebGPU, and existing browser ports are offline-only
-so real-time isn't a given); Firefox audio interception (blocked on Firefox,
-would remove the virtual-device step).
+- **Songs with vocals.** Demucs separates vocals from instruments, and has
+  no idea a streamer's voice differs from a singer's, so both land in the
+  same stem. The singing classifier catches most of it, but when the
+  streamer talks *over* a sung part, some of the song gets through.
+- **A few seconds of delay**, for the audio and the video with it. Demucs
+  needs a window of audio to separate well.
+- **The delayed video is re-encoded**, so it's close to the original but not
+  identical.
+- **macOS only**, and **Firefox needs a virtual audio device**.
+
+## Troubleshooting
+
+- **Nothing playing in Chrome:** `chrome://extensions` → StreamerIsolate →
+  *Inspect views: offscreen.html* shows the errors. In Firefox,
+  `about:debugging` → *Inspect*.
+- **Backend won't start:** check
+  `~/Library/Application Support/StreamerIsolate/backend.log`. If
+  `/tmp/streamerisolate-host.log` doesn't appear when you click Start, the
+  browser never ran the launcher. Re-run `./scripts/install.sh` (with the
+  Chrome ID).
+- **Slider has no effect:** stop the backend
+  (`pkill -f "streamerisolate serve"`) and start it yourself with debug
+  output. The extension uses one that's already running:
+
+  ```bash
+  STREAMERISOLATE_DEBUG=1 ~/Library/Application\ Support/StreamerIsolate/venv/bin/streamerisolate serve
+  ```
+
+  It prints one line per chunk: the strength it received, what the
+  classifier heard, and the gain it applied.
 
 ## Development
 
 ```bash
-./scripts/install.sh --dev   # editable install from this checkout
-pytest                       # chunking, resampling and gain-envelope tests
+./scripts/install.sh --dev   # editable install, runs from this checkout
+pytest                       # chunking, resampling and classifier tests
 ./tests/run_js_tests.sh      # extension frame-scheduling tests
 ```
 
-`--dev` runs the backend from the checkout so edits take effect immediately.
-Only use it if the checkout is somewhere macOS doesn't restrict — not
-Documents, Desktop or Downloads (see design notes for why).
+Use `--dev` only if the checkout is outside Documents, Desktop and Downloads.
+macOS blocks browsers from launching anything there, which is also why a
+normal install copies the runtime to `~/Library/Application Support`. After
+changing backend code, restart the backend (`pkill -f "streamerisolate
+serve"`; the next Start relaunches it). After changing an extension, reload
+it in the browser.
 
-For how it works internally and why it's built this way, see
-[docs/design-notes.md](docs/design-notes.md).
+How it works and why it's built this way, including the approaches that
+didn't work out: [docs/design-notes.md](docs/design-notes.md).

@@ -26,6 +26,7 @@ where = ["src"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+demo = ["matplotlib"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

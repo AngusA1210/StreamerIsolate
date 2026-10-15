@@ -174,3 +174,13 @@ stutter. That selection is the one piece of pure logic here, so it lives in
 `frame-scheduler.js` and is unit-tested (`tests/test_frame_scheduler.js`),
 including that every frame removed from the buffer is accounted for: decoded
 frames are a scarce resource and leaking them stalls the decoder.
+
+## Not done
+
+- **Running entirely in the browser, with no install.** Demucs would have to
+  be ported to ONNX/WebGPU, and the existing browser ports process whole
+  files offline, so real-time isn't a given.
+- **Firefox audio interception.** Blocked on Firefox itself; it would remove
+  the virtual-device step.
+- **Other platforms.** The Python side is portable; the installer and native
+  messaging registration are macOS-only.
