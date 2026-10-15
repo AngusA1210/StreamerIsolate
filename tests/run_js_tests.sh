@@ -4,6 +4,10 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+./scripts/sync-shared.sh --check
+echo "shared scripts: extension copies up to date"
+echo
+
 JSC="/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
 if [ ! -x "$JSC" ]; then
   echo "SKIP: JavaScriptCore not found at $JSC" >&2

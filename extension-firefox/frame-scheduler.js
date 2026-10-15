@@ -1,3 +1,6 @@
+// Source: shared/frame-scheduler.js. The copies in extension-chrome/ and
+// extension-firefox/ are made by scripts/sync-shared.sh -- edit the shared one.
+//
 // Pure frame-presentation scheduling, split out from content.js so it can be
 // tested without a browser (see tests/test_frame_scheduler.js).
 //

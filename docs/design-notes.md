@@ -104,10 +104,16 @@ delay rebuilds over a few seconds rather than replaying a stale backlog.
 | `src/streamerisolate/server.py` | Local websocket: audio streaming (Chrome) and pipeline control (Firefox) |
 | `extension-chrome/` | Chrome extension (tabCapture audio + video overlay) |
 | `extension-firefox/` | Firefox extension (backend control + video overlay) |
+| `shared/` | Video overlay scripts used by both extensions (source of truth) |
 | `native-host/` | Native messaging host that starts the backend on demand |
 
-`extension-firefox/content.js` is a copy of the Chrome one — the logic is
-browser-agnostic. Keep them in sync.
+The video overlay (`content.js`, `frame-scheduler.js`) is the same in both
+browsers, so it lives once in `shared/` and `scripts/sync-shared.sh` copies
+it into each extension. Symlinks would avoid the copies, but Firefox won't
+load a symlinked file that points outside the add-on's folder. Tested: the
+injected script silently never runs, though Chrome follows the same link
+fine. The copies are committed so the extension folders load straight from a
+checkout, and `tests/run_js_tests.sh` fails if any copy is out of date.
 
 ## CLI
 

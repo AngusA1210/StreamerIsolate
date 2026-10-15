@@ -1,9 +1,9 @@
-// Tests for extension-chrome/frame-scheduler.js.
+// Tests for shared/frame-scheduler.js.
 //
 // Run with macOS's built-in JavaScriptCore (no npm needed):
 //   tests/run_js_tests.sh
 
-load("extension-chrome/frame-scheduler.js");
+load("shared/frame-scheduler.js");
 const { pickDueFrame } = globalThis.__streamerIsolateScheduler;
 
 let failures = 0;

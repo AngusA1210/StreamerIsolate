@@ -1,3 +1,6 @@
+// Source: shared/content.js. The copies in extension-chrome/ and
+// extension-firefox/ are made by scripts/sync-shared.sh -- edit the shared one.
+//
 // Injected into the captured tab on start (see background.js). Shows a
 // delayed copy of the tab's video so it lines up with the processed audio,
 // while the real <video> element keeps playing undisturbed at full speed.

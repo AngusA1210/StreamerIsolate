@@ -1,5 +1,5 @@
-// NOTE: this is a copy of extension-chrome/content.js, which is the canonical
-// version -- the logic is browser-agnostic. Keep them in sync when editing.
+// Source: shared/content.js. The copies in extension-chrome/ and
+// extension-firefox/ are made by scripts/sync-shared.sh -- edit the shared one.
 //
 // Injected into the captured tab on start (see background.js). Shows a
 // delayed copy of the tab's video so it lines up with the processed audio,
