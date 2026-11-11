@@ -64,6 +64,9 @@ class Pipeline:
         self.chunks_emitted = 0
         self.error: str | None = None
         self._last_process_seconds = 0.0
+        # Positions on the input timeline, for measuring the real delay.
+        self._frames_captured = 0
+        self._frames_played = 0
 
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
@@ -77,6 +80,7 @@ class Pipeline:
             print(f"[input] {status}")
         with self._input_lock:
             self._input_buffer = np.concatenate([self._input_buffer, indata.copy()], axis=0)
+        self._frames_captured += frames
 
     # --- playback ---
 
@@ -86,15 +90,20 @@ class Pipeline:
         chunks = [self._playback_tail]
         have = len(self._playback_tail)
         self._playback_tail = np.zeros((0, self.channels), dtype=np.float32)
+        padding = 0
         while have < frames:
             try:
                 block = self._output_queue.get_nowait()
             except queue.Empty:
-                chunks.append(np.zeros((frames - have, self.channels), dtype=np.float32))
+                padding = frames - have
+                chunks.append(np.zeros((padding, self.channels), dtype=np.float32))
                 have = frames
                 break
             chunks.append(block)
             have += len(block)
+        # Silence padded in while waiting for a chunk isn't processed audio,
+        # so it doesn't advance the played position.
+        self._frames_played += frames - padding
         buf = np.concatenate(chunks, axis=0)
         outdata[:] = buf[:frames]
         self._playback_tail = buf[frames:]
@@ -151,16 +160,27 @@ class Pipeline:
         self._last_process_seconds = time.time() - started
 
     @property
-    def estimated_delay_seconds(self) -> float:
-        """Roughly how far the played audio lags the live input.
+    def delay_seconds(self) -> float:
+        """How far the audio being played lags the live input.
 
-        A full chunk has to accumulate before processing can start, then that
-        chunk takes some time to process, and anything already queued plays
-        first. Used by the Firefox extension to delay its video overlay to
-        match (Chrome measures this directly instead -- it can see both ends).
+        Measured, not estimated: output frame N is input frame N processed, so
+        the gap between how much has been captured and how much has been
+        played is the delay. The Firefox extension holds its video overlay
+        back by this much (Chrome measures the same thing at its own end).
+
+        An earlier version estimated it from the chunk length, the last
+        processing time and the output queue depth. That estimate swung by a
+        whole hop whenever a block sat in the queue, while the real delay
+        hadn't changed at all, and every swing made the video freeze and skip.
         """
-        queued_seconds = self._output_queue.qsize() * self.hop_samples / self.samplerate
-        return self.chunk_seconds + self._last_process_seconds + queued_seconds
+        if self._frames_played == 0:
+            # Nothing has come out yet; this is what the first chunk will take.
+            return self.chunk_seconds + self._last_process_seconds
+        delay = (self._frames_captured - self._frames_played) / self.samplerate
+        for stream in (self._instream, self._outstream):
+            if stream is not None:
+                delay += stream.latency
+        return delay
 
     # --- lifecycle ---
 

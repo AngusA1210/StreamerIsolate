@@ -136,21 +136,17 @@ async def _push_status(websocket, pipeline: Pipeline) -> None:
     pipeline runs: whether audio has started flowing yet, how far behind it
     is so the video overlay can match, and any failure.
 
-    The raw delay estimate swings by a whole hop as the output queue fills and
-    drains, so it's smoothed here -- feeding that swing straight to the video
-    overlay would make the picture visibly jump every few seconds.
+    The delay is measured by the pipeline and only changes when playback
+    actually underruns, so it's passed on as-is.
     """
-    smoothed: float | None = None
     try:
         while True:
-            raw = pipeline.estimated_delay_seconds
-            smoothed = raw if smoothed is None else 0.25 * raw + 0.75 * smoothed
             await websocket.send(
                 json.dumps(
                     {
                         "type": "status",
                         "phase": "running" if pipeline.chunks_emitted > 0 else "buffering",
-                        "delaySeconds": round(smoothed, 3),
+                        "delaySeconds": round(pipeline.delay_seconds, 3),
                         "error": pipeline.error,
                     }
                 )

@@ -268,7 +268,10 @@
     while (queue.length && queue[0].capturedAt <= cutoff) {
       const item = queue.shift();
       try {
-        if (item.decoderConfig) decoder.configure(item.decoderConfig);
+        // optimizeForLatency: our stream has no reordered frames, but without
+        // this Firefox holds ~5 back anyway (~110ms measured, vs ~3ms with
+        // it), which eats most of DECODE_LEAD_MS.
+        if (item.decoderConfig) decoder.configure({ ...item.decoderConfig, optimizeForLatency: true });
         if (decoder.state === "configured") decoder.decode(item.chunk);
       } catch (e) {
         console.warn("[StreamerIsolate] decode failed, resetting decoder:", e);

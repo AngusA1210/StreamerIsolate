@@ -90,12 +90,26 @@ How the delay target is chosen differs per browser:
   sent, so output frame N corresponds to input frame N; comparing when that
   frame was captured against when its processed counterpart is scheduled to
   play gives the true latency.
-- **Firefox** can't — it never sees the audio — so the backend reports an
-  estimate (chunk length + processing time + queued output), smoothed before
-  sending.
+- **Firefox** can't — it never sees the audio — so the backend measures it
+  the same way at its end: frames captured minus processed frames played,
+  plus the audio devices' own latency.
 
 Both only retarget the overlay when the delay changes meaningfully (>150ms),
 since retargeting makes the picture jump.
+
+The backend used to *estimate* the Firefox delay instead (chunk length +
+last processing time + output queue depth). The queue-depth term jumped by a
+whole 2.25s hop whenever a block was briefly queued, so under ordinary timing
+jitter the smoothed estimate wandered by half a second while the real delay
+stayed constant. A simulation of the pipeline put that at one video retarget
+every ~3s with normal jitter, and about two a second with the GPU shared with
+another app — which showed up as the picture constantly freezing and
+skipping. `tests/test_delay_measurement.py` holds the measured value to the
+true delay under the same conditions.
+
+The decoder is configured with `optimizeForLatency`. Without it Firefox
+holds about five frames back for reordering (~110ms measured, against ~3ms
+with it), which used up most of the margin frames are decoded ahead by.
 
 Known behavior: switching away from the tab freezes the browser's animation
 callbacks, so capture and playback stall. On return the buffer resets and the
