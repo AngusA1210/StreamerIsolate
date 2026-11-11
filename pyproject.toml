@@ -1,6 +1,6 @@
 [project]
 name = "streamerisolate"
-version = "0.1.0"
+version = "1.0.0"
 description = "Near-real-time music removal from livestream audio, using Demucs source separation."
 requires-python = ">=3.10"
 dependencies = [

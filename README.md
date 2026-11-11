@@ -122,7 +122,7 @@ separated vocals through untouched.
 
 ```bash
 ./scripts/install.sh --dev   # editable install, runs from this checkout
-pytest                       # chunking, resampling and classifier tests
+pytest                       # chunking, resampling, delay and classifier tests
 ./tests/run_js_tests.sh      # extension frame-scheduling tests
 ./scripts/sync-shared.sh     # after editing shared/, copy it into both extensions
 ```
