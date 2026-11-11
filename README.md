@@ -136,3 +136,7 @@ it in the browser.
 
 How it works and why it's built this way, including the approaches that
 didn't work out: [docs/design-notes.md](docs/design-notes.md).
+
+## License
+
+[MIT](LICENSE)

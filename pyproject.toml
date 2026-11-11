@@ -3,6 +3,7 @@ name = "streamerisolate"
 version = "1.0.0"
 description = "Near-real-time music removal from livestream audio, using Demucs source separation."
 requires-python = ">=3.10"
+license = { text = "MIT" }
 dependencies = [
     "torch",
     "demucs",
